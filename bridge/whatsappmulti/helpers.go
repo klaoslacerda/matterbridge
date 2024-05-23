@@ -136,9 +136,36 @@ func isGroupJid(identifier string) bool {
 func (b *Bwhatsapp) getDevice() (*store.Device, error) {
 	device := &store.Device{}
 
-	storeContainer, err := sqlstore.New("sqlite", "file:"+b.Config.GetString("sessionfile")+".db?_pragma=foreign_keys(1)&busy_timeout=10000", nil)
+	// Abrir conexão com o banco de dados
+	db, err := sql.Open("sqlite3", "file:"+b.Config.GetString("sessionfile")+".db?_busy_timeout=10000")
 	if err != nil {
-		return device, fmt.Errorf("failed to connect to database: %v", err)
+		return device, fmt.Errorf("failed to open database: %v", err)
+	}
+
+	// Certifique-se de fechar a conexão no final
+	defer db.Close()
+
+	// Ativar chaves estrangeiras
+	_, err = db.Exec("PRAGMA foreign_keys = ON;")
+	if err != nil {
+		return device, fmt.Errorf("failed to enable foreign keys: %v", err)
+	}
+
+	// Verificar se as chaves estrangeiras estão ativadas
+	var foreignKeysStatus int
+	err = db.QueryRow("PRAGMA foreign_keys;").Scan(&foreignKeysStatus)
+	if err != nil {
+		return device, fmt.Errorf("failed to check foreign keys status: %v", err)
+	}
+
+	if foreignKeysStatus != 1 {
+		return device, fmt.Errorf("foreign keys are not enabled")
+	}
+
+	// Inicializar o storeContainer com o banco de dados
+	storeContainer, err := sqlstore.NewWithDB(db)
+	if err != nil {
+		return device, fmt.Errorf("failed to initialize store with DB: %v", err)
 	}
 
 	device, err = storeContainer.GetFirstDevice()
@@ -208,3 +235,4 @@ func getMessageIdFormat(jid types.JID, messageID string) string {
 	jidStr := fmt.Sprintf("%s@%s", jid.User, jid.Server)
 	return fmt.Sprintf("%s/%s", jidStr, messageID)
 }
+
