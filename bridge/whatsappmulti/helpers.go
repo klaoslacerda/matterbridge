@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"strings"
 
+	"google.golang.org/protobuf/proto" // Corrigido para importar o pacote proto
+
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/binary/proto"
 	"go.mau.fi/whatsmeow/store"
@@ -193,7 +195,7 @@ func (b *Bwhatsapp) getNewReplyContext(parentID string) (*proto.ContextInfo, err
 	ctx := &proto.ContextInfo{
 		StanzaId:      &replyInfo.MessageID,
 		Participant:   &sender,
-		QuotedMessage: &proto.Message{Conversation: goproto.String("")},
+		QuotedMessage: &proto.Message{Conversation: proto.String("")},
 	}
 
 	return ctx, nil
