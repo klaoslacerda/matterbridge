@@ -5,7 +5,6 @@ package bwhatsapp
 
 import (
 	"fmt"
-	"log"
 	"strings"
 
 	goproto "google.golang.org/protobuf/proto"
@@ -13,7 +12,6 @@ import (
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/binary/proto"
 	"go.mau.fi/whatsmeow/store"
-	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
 	"github.com/dgraph-io/badger/v3"
 )
@@ -146,7 +144,7 @@ func (b *Bwhatsapp) getDevice() (*store.Device, error) {
 	defer db.Close()
 
 	// Inicializar o storeContainer com o BadgerDB
-	storeContainer, err := sqlstore.NewWithDB(db)
+	storeContainer, err := sqlstore.NewWithBadgerDB(db) // Você precisará adaptar isso para a inicialização do seu storeContainer
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize store with DB: %v", err)
 	}
