@@ -4,10 +4,9 @@
 package bwhatsapp
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
-
-	goproto "google.golang.org/protobuf/proto"
 
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/binary/proto"
@@ -149,7 +148,7 @@ func (b *Bwhatsapp) getDevice() (*store.Device, error) {
 			return err
 		}
 		return item.Value(func(val []byte) error {
-			return goproto.Unmarshal(val, device)
+			return json.Unmarshal(val, device)
 		})
 	})
 	if err != nil {
@@ -170,7 +169,7 @@ func (b *Bwhatsapp) saveDevice(device *store.Device) error {
 	defer db.Close()
 
 	err = db.Update(func(txn *badger.Txn) error {
-		data, err := goproto.Marshal(device)
+		data, err := json.Marshal(device)
 		if err != nil {
 			return err
 		}
