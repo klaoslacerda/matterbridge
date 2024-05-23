@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/klaoslacerda/matterbridge/bridge"
@@ -38,6 +39,7 @@ const (
 // Bwhatsapp Bridge structure keeping all the information needed for relying
 type Bwhatsapp struct {
 	*bridge.Config
+	sync.Mutex
 
 	startedAt    time.Time
 	wc           *whatsmeow.Client
