@@ -5,6 +5,7 @@ package bwhatsapp
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"mime"
@@ -91,7 +92,7 @@ func (b *Bwhatsapp) Connect() error {
 		firstlogin = true
 		qrChan, err = b.wc.GetQRChannel(context.Background())
 		if err != nil && !errors.Is(err, whatsmeow.ErrQRStoreContainsID) {
-			return errors.New("failed to to get QR channel:" + err.Error())
+			return errors.New("failed to get QR channel: " + err.Error())
 		}
 	}
 
@@ -100,19 +101,19 @@ func (b *Bwhatsapp) Connect() error {
 		return errors.New("failed to connect to WhatsApp: " + err.Error())
 	}
 
-	if b.wc.Store.ID == nil {
-		for evt := range qrChan {
-			if evt.Event == "code" {
-				qrterminal.GenerateHalfBlock(evt.Code, qrterminal.L, os.Stdout)
-			} else {
-				b.Log.Infof("QR channel result: %s", evt.Event)
+	if firstlogin {
+		if b.wc.Store.ID == nil {
+			for evt := range qrChan {
+				if evt.Event == "code" {
+					qrterminal.GenerateHalfBlock(evt.Code, qrterminal.L, os.Stdout)
+				} else {
+					b.Log.Infof("QR channel result: %s", evt.Event)
+				}
 			}
 		}
-	}
 
-	// disconnect and reconnect on our first login/pairing
-	// for some reason the GetJoinedGroups in JoinChannel doesn't work on first login
-	if firstlogin {
+		// Disconnect and reconnect on our first login/pairing
+		// For some reason the GetJoinedGroups in JoinChannel doesn't work on first login
 		b.wc.Disconnect()
 		time.Sleep(time.Second)
 
@@ -278,7 +279,7 @@ func (b *Bwhatsapp) PostImageMessage(msg config.Message, filetype string) (strin
 	message.ImageMessage = &waproto.ImageMessage{
 		Mimetype:      &filetype,
 		Caption:       &caption,
-			MediaKey:      resp.MediaKey,
+		MediaKey:      resp.MediaKey,
 		FileEncSha256: resp.FileEncSHA256,
 		FileSha256:    resp.FileSHA256,
 		FileLength:    goproto.Uint64(resp.FileLength),
