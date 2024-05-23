@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/42wim/matterbridge/bridge"
-	"github.com/42wim/matterbridge/bridge/config"
+	"github.com/klaoslacerda/matterbridge/bridge"
+	"github.com/klaoslacerda/matterbridge/bridge/config"
 	"github.com/davecgh/go-spew/spew"
 
 	"github.com/mattn/godown"

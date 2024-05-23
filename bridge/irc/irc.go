@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/42wim/matterbridge/bridge"
-	"github.com/42wim/matterbridge/bridge/config"
-	"github.com/42wim/matterbridge/bridge/helper"
+	"github.com/klaoslacerda/matterbridge/bridge"
+	"github.com/klaoslacerda/matterbridge/bridge/config"
+	"github.com/klaoslacerda/matterbridge/bridge/helper"
 	"github.com/lrstanley/girc"
 	stripmd "github.com/writeas/go-strip-markdown"
 

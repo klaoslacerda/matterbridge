@@ -3,8 +3,8 @@ package bdiscord
 import (
 	"bytes"
 
-	"github.com/42wim/matterbridge/bridge/config"
-	"github.com/42wim/matterbridge/bridge/helper"
+	"github.com/klaoslacerda/matterbridge/bridge/config"
+	"github.com/klaoslacerda/matterbridge/bridge/helper"
 	"github.com/bwmarrin/discordgo"
 )
 

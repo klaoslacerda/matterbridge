@@ -3,7 +3,7 @@
 package bridgemap
 
 import (
-	bdiscord "github.com/42wim/matterbridge/bridge/discord"
+	bdiscord "github.com/klaoslacerda/matterbridge/bridge/discord"
 )
 
 func init() {

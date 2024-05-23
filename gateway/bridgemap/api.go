@@ -3,7 +3,7 @@
 package bridgemap
 
 import (
-	"github.com/42wim/matterbridge/bridge/api"
+	"github.com/klaoslacerda/matterbridge/bridge/api"
 )
 
 func init() {
