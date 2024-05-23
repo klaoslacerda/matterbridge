@@ -133,19 +133,54 @@ func isGroupJid(identifier string) bool {
 }
 
 func (b *Bwhatsapp) getDevice() (*store.Device, error) {
-	// Inicializar o BadgerDB
 	opts := badger.DefaultOptions(b.Config.GetString("sessionfile") + ".db")
-	opts.Logger = nil // Desativa os logs do Badger
+	opts.Logger = nil
 	db, err := badger.Open(opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open badger database: %v", err)
 	}
+
 	defer db.Close()
 
-	// Use BadgerDB para armazenar dispositivos
-	// Adapte sua lógica aqui para armazenar e recuperar dispositivos usando BadgerDB
+	device := &store.Device{}
+	err = db.View(func(txn *badger.Txn) error {
+		item, err := txn.Get([]byte("device"))
+		if err != nil {
+			return err
+		}
+		return item.Value(func(val []byte) error {
+			return goproto.Unmarshal(val, device)
+		})
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get device: %v", err)
+	}
 
-	return &store.Device{}, nil // Retorne o dispositivo correto após implementar a lógica
+	return device, nil
+}
+
+func (b *Bwhatsapp) saveDevice(device *store.Device) error {
+	opts := badger.DefaultOptions(b.Config.GetString("sessionfile") + ".db")
+	opts.Logger = nil
+	db, err := badger.Open(opts)
+	if err != nil {
+		return fmt.Errorf("failed to open badger database: %v", err)
+	}
+
+	defer db.Close()
+
+	err = db.Update(func(txn *badger.Txn) error {
+		data, err := goproto.Marshal(device)
+		if err != nil {
+			return err
+		}
+		return txn.Set([]byte("device"), data)
+	})
+	if err != nil {
+		return fmt.Errorf("failed to save device: %v", err)
+	}
+
+	return nil
 }
 
 func (b *Bwhatsapp) getNewReplyContext(parentID string) (*proto.ContextInfo, error) {
