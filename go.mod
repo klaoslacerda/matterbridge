@@ -1,7 +1,7 @@
 module github.com/klaoslacerda/matterbridge
 
 require (
-	github.com/dgraph-io/badger/v3 v3.2011.1 // ou a versão mais recente disponível
+	github.com/dgraph-io/badger/v3@latest
 	github.com/Baozisoftware/qrcode-terminal-go v0.0.0-20170407111555-c0650d8dff0f
 	github.com/Benau/tgsconverter v0.0.0-20210809170556-99f4a4f6337f
 	github.com/Philipp15b/go-steam v1.0.1-0.20200727090957-6ae9b3c0a560
