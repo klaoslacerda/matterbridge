@@ -5,7 +5,6 @@ package bwhatsapp
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"mime"
