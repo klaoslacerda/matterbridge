@@ -4,6 +4,7 @@
 package bwhatsapp
 
 import (
+	"database/sql"
 	"fmt"
 	"strings"
 
@@ -14,6 +15,7 @@ import (
 	"go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 type ProfilePicInfo struct {
@@ -141,9 +143,6 @@ func (b *Bwhatsapp) getDevice() (*store.Device, error) {
 	if err != nil {
 		return device, fmt.Errorf("failed to open database: %v", err)
 	}
-
-	// Certifique-se de fechar a conexão no final
-	defer db.Close()
 
 	// Ativar chaves estrangeiras
 	_, err = db.Exec("PRAGMA foreign_keys = ON;")
