@@ -4,8 +4,8 @@
 package bwhatsapp
 
 import (
-	"database/sql"
 	"fmt"
+	"log"
 	"strings"
 
 	goproto "google.golang.org/protobuf/proto"
@@ -15,7 +15,7 @@ import (
 	"go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	"go.mau.fi/whatsmeow/types"
-	_ "github.com/mattn/go-sqlite3"
+	"github.com/dgraph-io/badger/v3"
 )
 
 type ProfilePicInfo struct {
@@ -136,40 +136,24 @@ func isGroupJid(identifier string) bool {
 }
 
 func (b *Bwhatsapp) getDevice() (*store.Device, error) {
-	device := &store.Device{}
-
-	// Abrir conexão com o banco de dados
-	db, err := sql.Open("sqlite3", "file:"+b.Config.GetString("sessionfile")+".db?_busy_timeout=10000")
+	// Inicializar o BadgerDB
+	opts := badger.DefaultOptions(b.Config.GetString("sessionfile") + ".db")
+	opts.Logger = nil // Desativa os logs do Badger
+	db, err := badger.Open(opts)
 	if err != nil {
-		return device, fmt.Errorf("failed to open database: %v", err)
+		return nil, fmt.Errorf("failed to open badger database: %v", err)
 	}
+	defer db.Close()
 
-	// Ativar chaves estrangeiras
-	_, err = db.Exec("PRAGMA foreign_keys = ON;")
-	if err != nil {
-		return device, fmt.Errorf("failed to enable foreign keys: %v", err)
-	}
-
-	// Verificar se as chaves estrangeiras estão ativadas
-	var foreignKeysStatus int
-	err = db.QueryRow("PRAGMA foreign_keys;").Scan(&foreignKeysStatus)
-	if err != nil {
-		return device, fmt.Errorf("failed to check foreign keys status: %v", err)
-	}
-
-	if foreignKeysStatus != 1 {
-		return device, fmt.Errorf("foreign keys are not enabled")
-	}
-
-	// Inicializar o storeContainer com o banco de dados
+	// Inicializar o storeContainer com o BadgerDB
 	storeContainer, err := sqlstore.NewWithDB(db)
 	if err != nil {
-		return device, fmt.Errorf("failed to initialize store with DB: %v", err)
+		return nil, fmt.Errorf("failed to initialize store with DB: %v", err)
 	}
 
-	device, err = storeContainer.GetFirstDevice()
+	device, err := storeContainer.GetFirstDevice()
 	if err != nil {
-		return device, fmt.Errorf("failed to get device: %v", err)
+		return nil, fmt.Errorf("failed to get device: %v", err)
 	}
 
 	return device, nil
