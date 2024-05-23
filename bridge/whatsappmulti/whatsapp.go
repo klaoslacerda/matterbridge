@@ -10,7 +10,6 @@ import (
 	"mime"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
@@ -279,7 +278,7 @@ func (b *Bwhatsapp) PostImageMessage(msg config.Message, filetype string) (strin
 	message.ImageMessage = &waproto.ImageMessage{
 		Mimetype:      &filetype,
 		Caption:       &caption,
-		MediaKey:      resp.MediaKey,
+			MediaKey:      resp.MediaKey,
 		FileEncSha256: resp.FileEncSHA256,
 		FileSha256:    resp.FileSHA256,
 		FileLength:    goproto.Uint64(resp.FileLength),
