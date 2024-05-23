@@ -249,10 +249,6 @@ type MessageEdit struct {
 	Embeds          []*MessageEmbed         `json:"embeds"`
 	AllowedMentions *MessageAllowedMentions `json:"allowed_mentions,omitempty"`
 	Flags           MessageFlags            `json:"flags,omitempty"`
-	// Files to append to the message
-	Files []*File `json:"-"`
-	// Overwrite existing attachments
-	Attachments *[]*MessageAttachment `json:"attachments,omitempty"`
 
 	ID      string
 	Channel string
@@ -325,9 +321,6 @@ type MessageAllowedMentions struct {
 	// A list of user IDs to allow. This cannot be used when specifying
 	// AllowedMentionTypeUsers in the Parse slice.
 	Users []string `json:"users,omitempty"`
-
-	// For replies, whether to mention the author of the message being replied to
-	RepliedUser bool `json:"replied_user"`
 }
 
 // A MessageAttachment stores data for message attachments.
@@ -389,8 +382,8 @@ type MessageEmbedAuthor struct {
 
 // MessageEmbedField is a part of a MessageEmbed struct.
 type MessageEmbedField struct {
-	Name   string `json:"name"`
-	Value  string `json:"value"`
+	Name   string `json:"name,omitempty"`
+	Value  string `json:"value,omitempty"`
 	Inline bool   `json:"inline,omitempty"`
 }
 
@@ -461,7 +454,7 @@ type MessageApplication struct {
 // MessageReference contains reference data sent with crossposted messages
 type MessageReference struct {
 	MessageID string `json:"message_id"`
-	ChannelID string `json:"channel_id,omitempty"`
+	ChannelID string `json:"channel_id"`
 	GuildID   string `json:"guild_id,omitempty"`
 }
 

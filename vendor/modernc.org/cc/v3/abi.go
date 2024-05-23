@@ -395,12 +395,8 @@ func (a *ABI) layout(ctx *context, n Node, t *structType) *structType {
 				group += f.bitFieldWidth
 			default:
 				if n := group % 64; n != 0 {
-					if ctx.cfg.FixBitfieldPadding {
-						off += int64(normalizeBitFieldWidth(group-n) - group)
-					} else {
-						group -= n
-						off += int64(normalizeBitFieldWidth(group) - group)
-					}
+					group -= n
+					off += int64(normalizeBitFieldWidth(group) - group)
 				}
 				off0 := off
 				off = roundup(off, 8*int64(al))

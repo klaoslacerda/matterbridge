@@ -6,14 +6,7 @@
 
 package whatsmeow
 
-import (
-	"context"
-
-	"go.mau.fi/libsignal/keys/prekey"
-
-	waBinary "go.mau.fi/whatsmeow/binary"
-	"go.mau.fi/whatsmeow/types"
-)
+import waBinary "go.mau.fi/whatsmeow/binary"
 
 type DangerousInternalClient struct {
 	c *Client
@@ -61,26 +54,10 @@ func (int *DangerousInternalClient) GetServerPreKeyCount() (int, error) {
 	return int.c.getServerPreKeyCount()
 }
 
-func (int *DangerousInternalClient) RequestAppStateKeys(ctx context.Context, keyIDs [][]byte) {
-	int.c.requestAppStateKeys(ctx, keyIDs)
+func (int *DangerousInternalClient) RequestAppStateKeys(keyIDs [][]byte) {
+	int.c.requestAppStateKeys(keyIDs)
 }
 
-func (int *DangerousInternalClient) SendRetryReceipt(node *waBinary.Node, info *types.MessageInfo, forceIncludeIdentity bool) {
-	int.c.sendRetryReceipt(node, info, forceIncludeIdentity)
-}
-
-func (int *DangerousInternalClient) EncryptMessageForDevice(plaintext []byte, to types.JID, bundle *prekey.Bundle, extraAttrs waBinary.Attrs) (*waBinary.Node, bool, error) {
-	return int.c.encryptMessageForDevice(plaintext, to, bundle, extraAttrs)
-}
-
-func (int *DangerousInternalClient) GetOwnID() types.JID {
-	return int.c.getOwnID()
-}
-
-func (int *DangerousInternalClient) DecryptDM(child *waBinary.Node, from types.JID, isPreKey bool) ([]byte, error) {
-	return int.c.decryptDM(child, from, isPreKey)
-}
-
-func (int *DangerousInternalClient) MakeDeviceIdentityNode() waBinary.Node {
-	return int.c.makeDeviceIdentityNode()
+func (int *DangerousInternalClient) SendRetryReceipt(node *waBinary.Node, forceIncludeIdentity bool) {
+	int.c.sendRetryReceipt(node, forceIncludeIdentity)
 }

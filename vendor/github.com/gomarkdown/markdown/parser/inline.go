@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/gomarkdown/markdown/ast"
+	"github.com/gomarkdown/markdown/internal/valid"
 )
 
 // Parsing of inline elements
@@ -68,7 +69,7 @@ func emphasis(p *Parser, data []byte, offset int) (int, ast.Node) {
 	if n > 2 && data[1] != c {
 		// whitespace cannot follow an opening emphasis;
 		// strikethrough only takes two characters '~~'
-		if IsSpace(data[1]) {
+		if isSpace(data[1]) {
 			return 0, nil
 		}
 		if p.extensions&SuperSubscript != 0 && c == '~' {
@@ -80,7 +81,7 @@ func emphasis(p *Parser, data []byte, offset int) (int, ast.Node) {
 			}
 			ret++ // we started with data[1:] above.
 			for i := 1; i < ret; i++ {
-				if IsSpace(data[i]) && !isEscape(data, i) {
+				if isSpace(data[i]) && !isEscape(data, i) {
 					return 0, nil
 				}
 			}
@@ -97,7 +98,7 @@ func emphasis(p *Parser, data []byte, offset int) (int, ast.Node) {
 	}
 
 	if n > 3 && data[1] == c && data[2] != c {
-		if IsSpace(data[2]) {
+		if isSpace(data[2]) {
 			return 0, nil
 		}
 		ret, node := helperDoubleEmphasis(p, data[2:], c)
@@ -109,7 +110,7 @@ func emphasis(p *Parser, data []byte, offset int) (int, ast.Node) {
 	}
 
 	if n > 4 && data[1] == c && data[2] == c && data[3] != c {
-		if c == '~' || IsSpace(data[3]) {
+		if c == '~' || isSpace(data[3]) {
 			return 0, nil
 		}
 		ret, node := helperTripleEmphasis(p, data, 3, c)
@@ -155,9 +156,8 @@ func codeSpan(p *Parser, data []byte, offset int) (int, ast.Node) {
 		if data[j] == '\n' {
 			break
 		}
-		if !IsSpace(data[j]) {
+		if !isSpace(data[j]) {
 			hasCharsAfterDelimiter = true
-			break
 		}
 	}
 
@@ -256,7 +256,7 @@ func maybeInlineFootnoteOrSuper(p *Parser, data []byte, offset int) (int, ast.No
 			return 0, nil
 		}
 		for i := offset; i < offset+ret; i++ {
-			if IsSpace(data[i]) && !isEscape(data, i) {
+			if isSpace(data[i]) && !isEscape(data, i) {
 				return 0, nil
 			}
 		}
@@ -421,7 +421,7 @@ func link(p *Parser, data []byte, offset int) (int, ast.Node) {
 
 			// skip whitespace after title
 			titleE = i - 1
-			for titleE > titleB && IsSpace(data[titleE]) {
+			for titleE > titleB && isSpace(data[titleE]) {
 				titleE--
 			}
 
@@ -433,7 +433,7 @@ func link(p *Parser, data []byte, offset int) (int, ast.Node) {
 		}
 
 		// remove whitespace at the end of the link
-		for linkE > linkB && IsSpace(data[linkE-1]) {
+		for linkE > linkB && isSpace(data[linkE-1]) {
 			linkE--
 		}
 
@@ -602,8 +602,9 @@ func link(p *Parser, data []byte, offset int) (int, ast.Node) {
 		}
 
 		// links need something to click on and somewhere to go
-		// [](http://bla) is legal in CommonMark, so allow txtE <=1 for linkNormal
-		// [bla]() is also legal in CommonMark, so allow empty uLink
+		if len(uLink) == 0 || (t == linkNormal && txtE <= 1) {
+			return 0, nil
+		}
 	}
 
 	// call the relevant rendering function
@@ -826,9 +827,7 @@ func linkEndsWithEntity(data []byte, linkEnd int) bool {
 }
 
 // hasPrefixCaseInsensitive is a custom implementation of
-//
-//	strings.HasPrefix(strings.ToLower(s), prefix)
-//
+//     strings.HasPrefix(strings.ToLower(s), prefix)
 // we rolled our own because ToLower pulls in a huge machinery of lowercasing
 // anything from Unicode and that's very slow. Since this func will only be
 // used on ASCII protocol prefixes, we can take shortcuts.
@@ -890,7 +889,7 @@ func autoLink(p *Parser, data []byte, offset int) (int, ast.Node) {
 
 	// scan backward for a word boundary
 	rewind := 0
-	for offset-rewind > 0 && rewind <= 7 && IsLetter(data[offset-rewind-1]) {
+	for offset-rewind > 0 && rewind <= 7 && isLetter(data[offset-rewind-1]) {
 		rewind++
 	}
 	if rewind > 6 { // longest supported protocol is "mailto" which has 6 letters
@@ -900,11 +899,7 @@ func autoLink(p *Parser, data []byte, offset int) (int, ast.Node) {
 	origData := data
 	data = data[offset-rewind:]
 
-	isSafeURL := p.IsSafeURLOverride
-	if isSafeURL == nil {
-		isSafeURL = IsSafeURL
-	}
-	if !isSafeURL(data) {
+	if !isSafeLink(data) {
 		return 0, nil
 	}
 
@@ -997,7 +992,36 @@ func autoLink(p *Parser, data []byte, offset int) (int, ast.Node) {
 }
 
 func isEndOfLink(char byte) bool {
-	return IsSpace(char) || char == '<'
+	return isSpace(char) || char == '<'
+}
+
+func isSafeLink(link []byte) bool {
+	nLink := len(link)
+	for _, path := range valid.Paths {
+		nPath := len(path)
+		linkPrefix := link[:nPath]
+		if nLink >= nPath && bytes.Equal(linkPrefix, path) {
+			if nLink == nPath {
+				return true
+			} else if isAlnum(link[nPath]) {
+				return true
+			}
+		}
+	}
+
+	for _, prefix := range valid.URIs {
+		// TODO: handle unicode here
+		// case-insensitive prefix test
+		nPrefix := len(prefix)
+		if nLink > nPrefix {
+			linkPrefix := bytes.ToLower(link[:nPrefix])
+			if bytes.Equal(linkPrefix, prefix) && isAlnum(link[nPrefix]) {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 // return the length of the given tag, or 0 is it's not valid
@@ -1019,7 +1043,7 @@ func tagLength(data []byte) (autolink autolinkType, end int) {
 		i = 1
 	}
 
-	if !IsAlnum(data[i]) {
+	if !isAlnum(data[i]) {
 		return notAutolink, 0
 	}
 
@@ -1027,7 +1051,7 @@ func tagLength(data []byte) (autolink autolinkType, end int) {
 	autolink = notAutolink
 
 	// try to find the beginning of an URI
-	for i < len(data) && (IsAlnum(data[i]) || data[i] == '.' || data[i] == '+' || data[i] == '-') {
+	for i < len(data) && (isAlnum(data[i]) || data[i] == '.' || data[i] == '+' || data[i] == '-') {
 		i++
 	}
 
@@ -1052,7 +1076,7 @@ func tagLength(data []byte) (autolink autolinkType, end int) {
 		for i < len(data) {
 			if data[i] == '\\' {
 				i += 2
-			} else if data[i] == '>' || data[i] == '\'' || data[i] == '"' || IsSpace(data[i]) {
+			} else if data[i] == '>' || data[i] == '\'' || data[i] == '"' || isSpace(data[i]) {
 				break
 			} else {
 				i++
@@ -1084,7 +1108,7 @@ func isMailtoAutoLink(data []byte) int {
 
 	// address is assumed to be: [-@._a-zA-Z0-9]+ with exactly one '@'
 	for i, c := range data {
-		if IsAlnum(c) {
+		if isAlnum(c) {
 			continue
 		}
 
@@ -1205,10 +1229,10 @@ func helperEmphasis(p *Parser, data []byte, c byte) (int, ast.Node) {
 			continue
 		}
 
-		if data[i] == c && !IsSpace(data[i-1]) {
+		if data[i] == c && !isSpace(data[i-1]) {
 
 			if p.extensions&NoIntraEmphasis != 0 {
-				if !(i+1 == len(data) || IsSpace(data[i+1]) || IsPunctuation(data[i+1])) {
+				if !(i+1 == len(data) || isSpace(data[i+1]) || isPunctuation(data[i+1])) {
 					continue
 				}
 			}
@@ -1232,7 +1256,7 @@ func helperDoubleEmphasis(p *Parser, data []byte, c byte) (int, ast.Node) {
 		}
 		i += length
 
-		if i+1 < len(data) && data[i] == c && data[i+1] == c && i > 0 && !IsSpace(data[i-1]) {
+		if i+1 < len(data) && data[i] == c && data[i+1] == c && i > 0 && !isSpace(data[i-1]) {
 			var node ast.Node = &ast.Strong{}
 			if c == '~' {
 				node = &ast.Del{}
@@ -1258,7 +1282,7 @@ func helperTripleEmphasis(p *Parser, data []byte, offset int, c byte) (int, ast.
 		i += length
 
 		// skip whitespace preceded symbols
-		if data[i] != c || IsSpace(data[i-1]) {
+		if data[i] != c || isSpace(data[i-1]) {
 			continue
 		}
 

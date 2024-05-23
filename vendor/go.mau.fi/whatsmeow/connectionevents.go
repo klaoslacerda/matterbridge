@@ -7,16 +7,16 @@
 package whatsmeow
 
 import (
+	"sync/atomic"
 	"time"
 
 	waBinary "go.mau.fi/whatsmeow/binary"
-	"go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 )
 
 func (cli *Client) handleStreamError(node *waBinary.Node) {
-	cli.isLoggedIn.Store(false)
+	atomic.StoreUint32(&cli.isLoggedIn, 0)
 	cli.clearResponseWaiters(node)
 	code, _ := node.Attrs["code"].(string)
 	conflict, _ := node.GetOptionalChildByTag("conflict")
@@ -47,16 +47,6 @@ func (cli *Client) handleStreamError(node *waBinary.Node) {
 		// This seems to happen when the server wants to restart or something.
 		// The disconnection will be emitted as an events.Disconnected and then the auto-reconnect will do its thing.
 		cli.Log.Warnf("Got 503 stream error, assuming automatic reconnect will handle it")
-	case cli.RefreshCAT != nil && (code == events.ConnectFailureCATInvalid.NumberString() || code == events.ConnectFailureCATExpired.NumberString()):
-		cli.Log.Infof("Got %s stream error, refreshing CAT before reconnecting...", code)
-		cli.socketLock.RLock()
-		defer cli.socketLock.RUnlock()
-		err := cli.RefreshCAT()
-		if err != nil {
-			cli.Log.Errorf("Failed to refresh CAT: %v", err)
-			cli.expectDisconnect()
-			go cli.dispatchEvent(&events.CATRefreshError{Error: err})
-		}
 	default:
 		cli.Log.Errorf("Unknown stream error: %s", node.XMLString())
 		go cli.dispatchEvent(&events.StreamError{Code: code, Raw: node})
@@ -89,29 +79,7 @@ func (cli *Client) handleIB(node *waBinary.Node) {
 func (cli *Client) handleConnectFailure(node *waBinary.Node) {
 	ag := node.AttrGetter()
 	reason := events.ConnectFailureReason(ag.Int("reason"))
-	message := ag.OptionalString("message")
-	willAutoReconnect := true
-	switch {
-	default:
-		// By default, expect a disconnect (i.e. prevent auto-reconnect)
-		cli.expectDisconnect()
-		willAutoReconnect = false
-	case reason == events.ConnectFailureServiceUnavailable:
-		// Auto-reconnect for 503s
-	case reason == events.ConnectFailureCATInvalid || reason == events.ConnectFailureCATExpired:
-		// Auto-reconnect when rotating CAT, lock socket to ensure refresh goes through before reconnect
-		cli.socketLock.RLock()
-		defer cli.socketLock.RUnlock()
-	case reason == 500 && message == "biz vname fetch error":
-		// These happen for business accounts randomly, also auto-reconnect
-	}
-	if reason == 403 {
-		cli.Log.Debugf(
-			"Message for 403 connect failure: %s / %s",
-			ag.OptionalString("logout_message_header"),
-			ag.OptionalString("logout_message_subtext"),
-		)
-	}
+	cli.expectDisconnect()
 	if reason.IsLoggedOut() {
 		cli.Log.Infof("Got %s connect failure, sending LoggedOut event and deleting session", reason)
 		go cli.dispatchEvent(&events.LoggedOut{OnConnect: true, Reason: reason})
@@ -121,26 +89,17 @@ func (cli *Client) handleConnectFailure(node *waBinary.Node) {
 		}
 	} else if reason == events.ConnectFailureTempBanned {
 		cli.Log.Warnf("Temporary ban connect failure: %s", node.XMLString())
+		expiryTime := ag.UnixTime("expire")
 		go cli.dispatchEvent(&events.TemporaryBan{
 			Code:   events.TempBanReason(ag.Int("code")),
-			Expire: time.Duration(ag.Int("expire")) * time.Second,
+			Expire: expiryTime,
 		})
 	} else if reason == events.ConnectFailureClientOutdated {
-		cli.Log.Errorf("Client outdated (405) connect failure (client version: %s)", store.GetWAVersion().String())
+		cli.Log.Errorf("Client outdated (405) connect failure")
 		go cli.dispatchEvent(&events.ClientOutdated{})
-	} else if reason == events.ConnectFailureCATInvalid || reason == events.ConnectFailureCATExpired {
-		cli.Log.Infof("Got %d/%s connect failure, refreshing CAT before reconnecting...", int(reason), message)
-		err := cli.RefreshCAT()
-		if err != nil {
-			cli.Log.Errorf("Failed to refresh CAT: %v", err)
-			cli.expectDisconnect()
-			go cli.dispatchEvent(&events.CATRefreshError{Error: err})
-		}
-	} else if willAutoReconnect {
-		cli.Log.Warnf("Got %d/%s connect failure, assuming automatic reconnect will handle it", int(reason), message)
 	} else {
 		cli.Log.Warnf("Unknown connect failure: %s", node.XMLString())
-		go cli.dispatchEvent(&events.ConnectFailure{Reason: reason, Message: message, Raw: node})
+		go cli.dispatchEvent(&events.ConnectFailure{Reason: reason, Raw: node})
 	}
 }
 
@@ -148,7 +107,7 @@ func (cli *Client) handleConnectSuccess(node *waBinary.Node) {
 	cli.Log.Infof("Successfully authenticated")
 	cli.LastSuccessfulConnect = time.Now()
 	cli.AutoReconnectErrors = 0
-	cli.isLoggedIn.Store(true)
+	atomic.StoreUint32(&cli.isLoggedIn, 1)
 	go func() {
 		if dbCount, err := cli.Store.PreKeys.UploadedPreKeyCount(); err != nil {
 			cli.Log.Errorf("Failed to get number of prekeys in database: %v", err)

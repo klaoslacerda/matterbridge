@@ -528,7 +528,6 @@ type Config struct {
 	DebugWorkingDir                        bool // Output to stderr.
 	DoNotTypecheckAsm                      bool
 	EnableAssignmentCompatibilityChecking  bool // No such checks performed up to v3.31.0. Currently only partially implemented.
-	FixBitfieldPadding                     bool // Fix a bug in calculating field positions after a bitfield.
 	InjectTracingCode                      bool // Output to stderr.
 	LongDoubleIsDouble                     bool
 	PreprocessOnly                         bool

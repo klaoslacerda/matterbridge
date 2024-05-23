@@ -23,12 +23,10 @@ func (g *Group) Use(middleware ...MiddlewareFunc) {
 	if len(g.middleware) == 0 {
 		return
 	}
-	// group level middlewares are different from Echo `Pre` and `Use` middlewares (those are global). Group level middlewares
-	// are only executed if they are added to the Router with route.
-	// So we register catch all route (404 is a safe way to emulate route match) for this group and now during routing the
-	// Router would find route to match our request path and therefore guarantee the middleware(s) will get executed.
-	g.RouteNotFound("", NotFoundHandler)
-	g.RouteNotFound("/*", NotFoundHandler)
+	// Allow all requests to reach the group as they might get dropped if router
+	// doesn't find a match, making none of the group middleware process.
+	g.Any("", NotFoundHandler)
+	g.Any("/*", NotFoundHandler)
 }
 
 // CONNECT implements `Echo#CONNECT()` for sub-routes within the Group.
@@ -107,13 +105,6 @@ func (g *Group) Group(prefix string, middleware ...MiddlewareFunc) (sg *Group) {
 // File implements `Echo#File()` for sub-routes within the Group.
 func (g *Group) File(path, file string) {
 	g.file(path, file, g.GET)
-}
-
-// RouteNotFound implements `Echo#RouteNotFound()` for sub-routes within the Group.
-//
-// Example: `g.RouteNotFound("/*", func(c echo.Context) error { return c.NoContent(http.StatusNotFound) })`
-func (g *Group) RouteNotFound(path string, h HandlerFunc, m ...MiddlewareFunc) *Route {
-	return g.Add(RouteNotFound, path, h, m...)
 }
 
 // Add implements `Echo#Add()` for sub-routes within the Group.

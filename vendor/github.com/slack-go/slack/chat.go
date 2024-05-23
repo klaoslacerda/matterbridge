@@ -64,9 +64,6 @@ type PostMessageParameters struct {
 	// chat.postEphemeral support
 	Channel string `json:"channel"`
 	User    string `json:"user"`
-
-	// chat metadata support
-	MetaData SlackMetadata `json:"metadata"`
 }
 
 // NewPostMessageParameters provides an instance of PostMessageParameters with all the sane default values set
@@ -288,7 +285,6 @@ type sendConfig struct {
 	endpoint        string
 	values          url.Values
 	attachments     []Attachment
-	metadata        SlackMetadata
 	blocks          Blocks
 	responseType    string
 	replaceOriginal bool
@@ -310,7 +306,6 @@ func (t sendConfig) BuildRequestContext(ctx context.Context, token, channelID st
 			endpoint:        t.endpoint,
 			values:          t.values,
 			attachments:     t.attachments,
-			metadata:        t.metadata,
 			blocks:          t.blocks,
 			responseType:    t.responseType,
 			replaceOriginal: t.replaceOriginal,
@@ -341,7 +336,6 @@ type responseURLSender struct {
 	endpoint        string
 	values          url.Values
 	attachments     []Attachment
-	metadata        SlackMetadata
 	blocks          Blocks
 	responseType    string
 	replaceOriginal bool
@@ -358,7 +352,6 @@ func (t responseURLSender) BuildRequestContext(ctx context.Context) (*http.Reque
 		Timestamp:       t.values.Get("ts"),
 		Attachments:     t.attachments,
 		Blocks:          t.blocks,
-		Metadata:        t.metadata,
 		ResponseType:    t.responseType,
 		ReplaceOriginal: t.replaceOriginal,
 		DeleteOriginal:  t.deleteOriginal,
@@ -666,18 +659,6 @@ func MsgOptionIconEmoji(iconEmoji string) MsgOption {
 	return func(config *sendConfig) error {
 		config.values.Set("icon_emoji", iconEmoji)
 		return nil
-	}
-}
-
-// MsgOptionMetadata sets message metadata
-func MsgOptionMetadata(metadata SlackMetadata) MsgOption {
-	return func(config *sendConfig) error {
-		config.metadata = metadata
-		meta, err := json.Marshal(metadata)
-		if err == nil {
-			config.values.Set("metadata", string(meta))
-		}
-		return err
 	}
 }
 

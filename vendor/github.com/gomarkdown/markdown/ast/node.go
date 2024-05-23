@@ -92,12 +92,6 @@ type Container struct {
 	*Attribute // Block level attribute
 }
 
-// return true if can contain children of a given node type
-// used by custom nodes to over-ride logic in canNodeContain
-type CanContain interface {
-	CanContain(Node) bool
-}
-
 // AsContainer returns itself as *Container
 func (c *Container) AsContainer() *Container {
 	return c
@@ -163,13 +157,9 @@ func (l *Leaf) GetChildren() []Node {
 	return nil
 }
 
-// SetChildren will panic if trying to set non-empty children
-// because Leaf cannot have children
+// SetChildren will panic becuase Leaf cannot have children
 func (l *Leaf) SetChildren(newChildren []Node) {
-	if len(newChildren) != 0 {
-		panic("leaf node cannot have children")
-	}
-
+	panic("leaf node cannot have children")
 }
 
 // Document represents markdown document node, a root of ast
@@ -282,7 +272,6 @@ type CrossReference struct {
 	Container
 
 	Destination []byte // Destination is where the reference points to
-	Suffix      []byte // Potential citation suffix, i.e. (#myid, text)
 }
 
 // Citation is a citation node.

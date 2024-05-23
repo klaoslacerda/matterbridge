@@ -12,7 +12,7 @@ func isBackslashEscaped(data []byte, i int) bool {
 }
 
 func (p *Parser) tableRow(data []byte, columns []ast.CellAlignFlags, header bool) {
-	p.AddBlock(&ast.TableRow{})
+	p.addBlock(&ast.TableRow{})
 	col := 0
 
 	i := skipChar(data, 0, '|')
@@ -61,7 +61,7 @@ func (p *Parser) tableRow(data []byte, columns []ast.CellAlignFlags, header bool
 			// an empty cell that we should ignore, it exists because of colspan
 			colspans--
 		} else {
-			p.AddBlock(block)
+			p.addBlock(block)
 		}
 
 		if colspan > 0 {
@@ -75,7 +75,7 @@ func (p *Parser) tableRow(data []byte, columns []ast.CellAlignFlags, header bool
 			IsHeader: header,
 			Align:    columns[col],
 		}
-		p.AddBlock(block)
+		p.addBlock(block)
 	}
 
 	// silently ignore rows with too many cells
@@ -109,7 +109,7 @@ func (p *Parser) tableFooter(data []byte) bool {
 		return false
 	}
 
-	p.AddBlock(&ast.TableFooter{})
+	p.addBlock(&ast.TableFooter{})
 
 	return true
 }
@@ -217,7 +217,7 @@ func (p *Parser) tableHeader(data []byte, doRender bool) (size int, columns []as
 		}
 		// end of column test is messy
 		switch {
-		case dashes < 1:
+		case dashes < 3:
 			// not a valid column
 			return
 
@@ -253,9 +253,9 @@ func (p *Parser) tableHeader(data []byte, doRender bool) (size int, columns []as
 
 	if doRender {
 		table = &ast.Table{}
-		p.AddBlock(table)
+		p.addBlock(table)
 		if header != nil {
-			p.AddBlock(&ast.TableHeader{})
+			p.addBlock(&ast.TableHeader{})
 			p.tableRow(header, columns, true)
 		}
 	}
@@ -277,7 +277,7 @@ func (p *Parser) table(data []byte) int {
 		return 0
 	}
 
-	p.AddBlock(&ast.TableBody{})
+	p.addBlock(&ast.TableBody{})
 
 	for i < len(data) {
 		pipes, rowStart := 0, i
@@ -319,7 +319,7 @@ func (p *Parser) table(data []byte) int {
 		ast.AppendChild(figure, caption)
 
 		p.addChild(figure)
-		p.Finalize(figure)
+		p.finalize(figure)
 
 		i += consumed
 	}

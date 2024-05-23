@@ -58,32 +58,6 @@ func Encode(dst, src []byte) []byte {
 	return dst[:d]
 }
 
-// EstimateBlockSize will perform a very fast compression
-// without outputting the result and return the compressed output size.
-// The function returns -1 if no improvement could be achieved.
-// Using actual compression will most often produce better compression than the estimate.
-func EstimateBlockSize(src []byte) (d int) {
-	if len(src) < 6 || int64(len(src)) > 0xffffffff {
-		return -1
-	}
-	if len(src) <= 1024 {
-		d = calcBlockSizeSmall(src)
-	} else {
-		d = calcBlockSize(src)
-	}
-
-	if d == 0 {
-		return -1
-	}
-	// Size of the varint encoded block size.
-	d += (bits.Len64(uint64(len(src))) + 7) / 7
-
-	if d >= len(src) {
-		return -1
-	}
-	return d
-}
-
 // EncodeBetter returns the encoded form of src. The returned slice may be a sub-
 // slice of dst if dst was large enough to hold the entire encoded block.
 // Otherwise, a newly allocated slice will be returned.
@@ -158,7 +132,7 @@ func EncodeBest(dst, src []byte) []byte {
 		d += emitLiteral(dst[d:], src)
 		return dst[:d]
 	}
-	n := encodeBlockBest(dst[d:], src, nil)
+	n := encodeBlockBest(dst[d:], src)
 	if n > 0 {
 		d += n
 		return dst[:d]
@@ -430,11 +404,10 @@ type Writer struct {
 	buffers       sync.Pool
 	pad           int
 
-	writer    io.Writer
-	randSrc   io.Reader
-	writerWg  sync.WaitGroup
-	index     Index
-	customEnc func(dst, src []byte) int
+	writer   io.Writer
+	randSrc  io.Reader
+	writerWg sync.WaitGroup
+	index    Index
 
 	// wroteStreamHeader is whether we have written the stream header.
 	wroteStreamHeader bool
@@ -800,9 +773,6 @@ func (w *Writer) EncodeBuffer(buf []byte) (err error) {
 }
 
 func (w *Writer) encodeBlock(obuf, uncompressed []byte) int {
-	if w.customEnc != nil {
-		return w.customEnc(obuf, uncompressed)
-	}
 	if w.snappy {
 		switch w.level {
 		case levelFast:
@@ -820,7 +790,7 @@ func (w *Writer) encodeBlock(obuf, uncompressed []byte) int {
 	case levelBetter:
 		return encodeBlockBetter(obuf, uncompressed)
 	case levelBest:
-		return encodeBlockBest(obuf, uncompressed, nil)
+		return encodeBlockBest(obuf, uncompressed)
 	}
 	return 0
 }
@@ -1366,18 +1336,6 @@ func WriterSnappyCompat() WriterOption {
 func WriterFlushOnWrite() WriterOption {
 	return func(w *Writer) error {
 		w.flushOnWrite = true
-		return nil
-	}
-}
-
-// WriterCustomEncoder allows to override the encoder for blocks on the stream.
-// The function must compress 'src' into 'dst' and return the bytes used in dst as an integer.
-// Block size (initial varint) should not be added by the encoder.
-// Returning value 0 indicates the block could not be compressed.
-// The function should expect to be called concurrently.
-func WriterCustomEncoder(fn func(dst, src []byte) int) WriterOption {
-	return func(w *Writer) error {
-		w.customEnc = fn
 		return nil
 	}
 }

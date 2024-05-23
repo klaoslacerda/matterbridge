@@ -153,10 +153,6 @@ func (m *Client) Login() error {
 		return fmt.Errorf("Team '%s' not found in %v", m.Credentials.Team, validTeamNames)
 	}
 
-	if err := m.initUserChannels(); err != nil {
-		return err
-	}
-
 	// connect websocket
 	m.wsConnect()
 
@@ -336,11 +332,8 @@ func (m *Client) initUser() error {
 
 			time.Sleep(time.Millisecond * 200)
 		}
-		m.logger.Debugf("found %d users in team %s", len(usermap), team.Name)
-		// add all users
-		for k, v := range usermap {
-			m.Users[k] = v
-		}
+
+		m.logger.Infof("found %d users in team %s", len(usermap), team.Name)
 
 		t := &Team{
 			Team:  team,
@@ -348,25 +341,29 @@ func (m *Client) initUser() error {
 			ID:    team.Id,
 		}
 
+		mmchannels, _, err := m.Client.GetChannelsForTeamForUser(team.Id, m.User.Id, false, "")
+		if err != nil {
+			return err
+		}
+
+		t.Channels = mmchannels
+
+		mmchannels, _, err = m.Client.GetPublicChannelsForTeam(team.Id, 0, 5000, "")
+		if err != nil {
+			return err
+		}
+
+		t.MoreChannels = mmchannels
 		m.OtherTeams = append(m.OtherTeams, t)
 
 		if team.Name == m.Credentials.Team {
 			m.Team = t
 			m.logger.Debugf("initUser(): found our team %s (id: %s)", team.Name, team.Id)
 		}
-	}
-
-	return nil
-}
-
-func (m *Client) initUserChannels() error {
-	if err := m.UpdateChannels(); err != nil {
-		return err
-	}
-
-	for _, t := range m.OtherTeams {
-		m.logger.Debugf("found %d channels for user in team %s", len(t.Channels), t.Team.Name)
-		m.logger.Debugf("found %d public channels in team %s", len(t.MoreChannels), t.Team.Name)
+		// add all users
+		for k, v := range t.Users {
+			m.Users[k] = v
+		}
 	}
 
 	return nil
@@ -532,7 +529,7 @@ func (m *Client) wsConnect() {
 }
 
 func (m *Client) doCheckAlive() error {
-	if _, _, err := m.Client.GetPing(); err != nil {
+	if _, _, err := m.Client.GetMe(""); err != nil {
 		return err
 	}
 

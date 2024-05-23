@@ -2,7 +2,6 @@ package echo
 
 import (
 	"bytes"
-	"fmt"
 	"net/http"
 )
 
@@ -20,39 +19,30 @@ type (
 		prefix         string
 		parent         *node
 		staticChildren children
-		originalPath   string
-		methods        *routeMethods
+		ppath          string
+		pnames         []string
+		methodHandler  *methodHandler
 		paramChild     *node
 		anyChild       *node
-		paramsCount    int
 		// isLeaf indicates that node does not have child routes
 		isLeaf bool
 		// isHandler indicates that node has at least one handler registered to it
 		isHandler bool
-
-		// notFoundHandler is handler registered with RouteNotFound method and is executed for 404 cases
-		notFoundHandler *routeMethod
 	}
-	kind        uint8
-	children    []*node
-	routeMethod struct {
-		ppath   string
-		pnames  []string
-		handler HandlerFunc
-	}
-	routeMethods struct {
-		connect     *routeMethod
-		delete      *routeMethod
-		get         *routeMethod
-		head        *routeMethod
-		options     *routeMethod
-		patch       *routeMethod
-		post        *routeMethod
-		propfind    *routeMethod
-		put         *routeMethod
-		trace       *routeMethod
-		report      *routeMethod
-		anyOther    map[string]*routeMethod
+	kind          uint8
+	children      []*node
+	methodHandler struct {
+		connect     HandlerFunc
+		delete      HandlerFunc
+		get         HandlerFunc
+		head        HandlerFunc
+		options     HandlerFunc
+		patch       HandlerFunc
+		post        HandlerFunc
+		propfind    HandlerFunc
+		put         HandlerFunc
+		trace       HandlerFunc
+		report      HandlerFunc
 		allowHeader string
 	}
 )
@@ -66,7 +56,7 @@ const (
 	anyLabel   = byte('*')
 )
 
-func (m *routeMethods) isHandler() bool {
+func (m *methodHandler) isHandler() bool {
 	return m.connect != nil ||
 		m.delete != nil ||
 		m.get != nil ||
@@ -77,12 +67,10 @@ func (m *routeMethods) isHandler() bool {
 		m.propfind != nil ||
 		m.put != nil ||
 		m.trace != nil ||
-		m.report != nil ||
-		len(m.anyOther) != 0
-	// RouteNotFound/404 is not considered as a handler
+		m.report != nil
 }
 
-func (m *routeMethods) updateAllowHeader() {
+func (m *methodHandler) updateAllowHeader() {
 	buf := new(bytes.Buffer)
 	buf.WriteString(http.MethodOptions)
 
@@ -124,10 +112,6 @@ func (m *routeMethods) updateAllowHeader() {
 	if m.report != nil {
 		buf.WriteString(", REPORT")
 	}
-	for method := range m.anyOther { // for simplicity, we use map and therefore order is not deterministic here
-		buf.WriteString(", ")
-		buf.WriteString(method)
-	}
 	m.allowHeader = buf.String()
 }
 
@@ -135,61 +119,11 @@ func (m *routeMethods) updateAllowHeader() {
 func NewRouter(e *Echo) *Router {
 	return &Router{
 		tree: &node{
-			methods: new(routeMethods),
+			methodHandler: new(methodHandler),
 		},
 		routes: map[string]*Route{},
 		echo:   e,
 	}
-}
-
-// Routes returns the registered routes.
-func (r *Router) Routes() []*Route {
-	routes := make([]*Route, 0, len(r.routes))
-	for _, v := range r.routes {
-		routes = append(routes, v)
-	}
-	return routes
-}
-
-// Reverse generates a URL from route name and provided parameters.
-func (r *Router) Reverse(name string, params ...interface{}) string {
-	uri := new(bytes.Buffer)
-	ln := len(params)
-	n := 0
-	for _, route := range r.routes {
-		if route.Name == name {
-			for i, l := 0, len(route.Path); i < l; i++ {
-				hasBackslash := route.Path[i] == '\\'
-				if hasBackslash && i+1 < l && route.Path[i+1] == ':' {
-					i++ // backslash before colon escapes that colon. in that case skip backslash
-				}
-				if n < ln && (route.Path[i] == '*' || (!hasBackslash && route.Path[i] == ':')) {
-					// in case of `*` wildcard or `:` (unescaped colon) param we replace everything till next slash or end of path
-					for ; i < l && route.Path[i] != '/'; i++ {
-					}
-					uri.WriteString(fmt.Sprintf("%v", params[n]))
-					n++
-				}
-				if i < l {
-					uri.WriteByte(route.Path[i])
-				}
-			}
-			break
-		}
-	}
-	return uri.String()
-}
-
-func (r *Router) add(method, path, name string, h HandlerFunc) *Route {
-	r.Add(method, path, h)
-
-	route := &Route{
-		Method: method,
-		Path:   path,
-		Name:   name,
-	}
-	r.routes[method+path] = route
-	return route
 }
 
 // Add registers a new route for method and path with matching handler.
@@ -219,7 +153,7 @@ func (r *Router) Add(method, path string, h HandlerFunc) {
 			}
 			j := i + 1
 
-			r.insert(method, path[:i], staticKind, routeMethod{})
+			r.insert(method, path[:i], nil, staticKind, "", nil)
 			for ; i < lcpIndex && path[i] != '/'; i++ {
 			}
 
@@ -229,23 +163,23 @@ func (r *Router) Add(method, path string, h HandlerFunc) {
 
 			if i == lcpIndex {
 				// path node is last fragment of route path. ie. `/users/:id`
-				r.insert(method, path[:i], paramKind, routeMethod{ppath, pnames, h})
+				r.insert(method, path[:i], h, paramKind, ppath, pnames)
 			} else {
-				r.insert(method, path[:i], paramKind, routeMethod{})
+				r.insert(method, path[:i], nil, paramKind, "", nil)
 			}
 		} else if path[i] == '*' {
-			r.insert(method, path[:i], staticKind, routeMethod{})
+			r.insert(method, path[:i], nil, staticKind, "", nil)
 			pnames = append(pnames, "*")
-			r.insert(method, path[:i+1], anyKind, routeMethod{ppath, pnames, h})
+			r.insert(method, path[:i+1], h, anyKind, ppath, pnames)
 		}
 	}
 
-	r.insert(method, path, staticKind, routeMethod{ppath, pnames, h})
+	r.insert(method, path, h, staticKind, ppath, pnames)
 }
 
-func (r *Router) insert(method, path string, t kind, rm routeMethod) {
+func (r *Router) insert(method, path string, h HandlerFunc, t kind, ppath string, pnames []string) {
 	// Adjust max param
-	paramLen := len(rm.pnames)
+	paramLen := len(pnames)
 	if *r.echo.maxParam < paramLen {
 		*r.echo.maxParam = paramLen
 	}
@@ -273,31 +207,25 @@ func (r *Router) insert(method, path string, t kind, rm routeMethod) {
 			// At root node
 			currentNode.label = search[0]
 			currentNode.prefix = search
-			if rm.handler != nil {
+			if h != nil {
 				currentNode.kind = t
-				currentNode.addMethod(method, &rm)
-				currentNode.paramsCount = len(rm.pnames)
-				currentNode.originalPath = rm.ppath
+				currentNode.addHandler(method, h)
+				currentNode.ppath = ppath
+				currentNode.pnames = pnames
 			}
 			currentNode.isLeaf = currentNode.staticChildren == nil && currentNode.paramChild == nil && currentNode.anyChild == nil
 		} else if lcpLen < prefixLen {
-			// Split node into two before we insert new node.
-			// This happens when we are inserting path that is submatch of any existing inserted paths.
-			// For example, we have node `/test` and now are about to insert `/te/*`. In that case
-			// 1. overlapping part is `/te` that is used as parent node
-			// 2. `st` is part from existing node that is not matching - it gets its own node (child to `/te`)
-			// 3. `/*` is the new part we are about to insert (child to `/te`)
+			// Split node
 			n := newNode(
 				currentNode.kind,
 				currentNode.prefix[lcpLen:],
 				currentNode,
 				currentNode.staticChildren,
-				currentNode.originalPath,
-				currentNode.methods,
-				currentNode.paramsCount,
+				currentNode.methodHandler,
+				currentNode.ppath,
+				currentNode.pnames,
 				currentNode.paramChild,
 				currentNode.anyChild,
-				currentNode.notFoundHandler,
 			)
 			// Update parent path for all children to new node
 			for _, child := range currentNode.staticChildren {
@@ -315,14 +243,13 @@ func (r *Router) insert(method, path string, t kind, rm routeMethod) {
 			currentNode.label = currentNode.prefix[0]
 			currentNode.prefix = currentNode.prefix[:lcpLen]
 			currentNode.staticChildren = nil
-			currentNode.originalPath = ""
-			currentNode.methods = new(routeMethods)
-			currentNode.paramsCount = 0
+			currentNode.methodHandler = new(methodHandler)
+			currentNode.ppath = ""
+			currentNode.pnames = nil
 			currentNode.paramChild = nil
 			currentNode.anyChild = nil
 			currentNode.isLeaf = false
 			currentNode.isHandler = false
-			currentNode.notFoundHandler = nil
 
 			// Only Static children could reach here
 			currentNode.addStaticChild(n)
@@ -330,19 +257,13 @@ func (r *Router) insert(method, path string, t kind, rm routeMethod) {
 			if lcpLen == searchLen {
 				// At parent node
 				currentNode.kind = t
-				if rm.handler != nil {
-					currentNode.addMethod(method, &rm)
-					currentNode.paramsCount = len(rm.pnames)
-					currentNode.originalPath = rm.ppath
-				}
+				currentNode.addHandler(method, h)
+				currentNode.ppath = ppath
+				currentNode.pnames = pnames
 			} else {
 				// Create child node
-				n = newNode(t, search[lcpLen:], currentNode, nil, "", new(routeMethods), 0, nil, nil, nil)
-				if rm.handler != nil {
-					n.addMethod(method, &rm)
-					n.paramsCount = len(rm.pnames)
-					n.originalPath = rm.ppath
-				}
+				n = newNode(t, search[lcpLen:], currentNode, nil, new(methodHandler), ppath, pnames, nil, nil)
+				n.addHandler(method, h)
 				// Only Static children could reach here
 				currentNode.addStaticChild(n)
 			}
@@ -356,12 +277,8 @@ func (r *Router) insert(method, path string, t kind, rm routeMethod) {
 				continue
 			}
 			// Create child node
-			n := newNode(t, search, currentNode, nil, rm.ppath, new(routeMethods), 0, nil, nil, nil)
-			if rm.handler != nil {
-				n.addMethod(method, &rm)
-				n.paramsCount = len(rm.pnames)
-			}
-
+			n := newNode(t, search, currentNode, nil, new(methodHandler), ppath, pnames, nil, nil)
+			n.addHandler(method, h)
 			switch t {
 			case staticKind:
 				currentNode.addStaticChild(n)
@@ -373,42 +290,32 @@ func (r *Router) insert(method, path string, t kind, rm routeMethod) {
 			currentNode.isLeaf = currentNode.staticChildren == nil && currentNode.paramChild == nil && currentNode.anyChild == nil
 		} else {
 			// Node already exists
-			if rm.handler != nil {
-				currentNode.addMethod(method, &rm)
-				currentNode.paramsCount = len(rm.pnames)
-				currentNode.originalPath = rm.ppath
+			if h != nil {
+				currentNode.addHandler(method, h)
+				currentNode.ppath = ppath
+				if len(currentNode.pnames) == 0 { // Issue #729
+					currentNode.pnames = pnames
+				}
 			}
 		}
 		return
 	}
 }
 
-func newNode(
-	t kind,
-	pre string,
-	p *node,
-	sc children,
-	originalPath string,
-	methods *routeMethods,
-	paramsCount int,
-	paramChildren,
-	anyChildren *node,
-	notFoundHandler *routeMethod,
-) *node {
+func newNode(t kind, pre string, p *node, sc children, mh *methodHandler, ppath string, pnames []string, paramChildren, anyChildren *node) *node {
 	return &node{
-		kind:            t,
-		label:           pre[0],
-		prefix:          pre,
-		parent:          p,
-		staticChildren:  sc,
-		originalPath:    originalPath,
-		methods:         methods,
-		paramsCount:     paramsCount,
-		paramChild:      paramChildren,
-		anyChild:        anyChildren,
-		isLeaf:          sc == nil && paramChildren == nil && anyChildren == nil,
-		isHandler:       methods.isHandler(),
-		notFoundHandler: notFoundHandler,
+		kind:           t,
+		label:          pre[0],
+		prefix:         pre,
+		parent:         p,
+		staticChildren: sc,
+		ppath:          ppath,
+		pnames:         pnames,
+		methodHandler:  mh,
+		paramChild:     paramChildren,
+		anyChild:       anyChildren,
+		isLeaf:         sc == nil && paramChildren == nil && anyChildren == nil,
+		isHandler:      mh.isHandler(),
 	}
 }
 
@@ -426,8 +333,10 @@ func (n *node) findStaticChild(l byte) *node {
 }
 
 func (n *node) findChildWithLabel(l byte) *node {
-	if c := n.findStaticChild(l); c != nil {
-		return c
+	for _, c := range n.staticChildren {
+		if c.label == l {
+			return c
+		}
 	}
 	if l == paramLabel {
 		return n.paramChild
@@ -438,74 +347,66 @@ func (n *node) findChildWithLabel(l byte) *node {
 	return nil
 }
 
-func (n *node) addMethod(method string, h *routeMethod) {
+func (n *node) addHandler(method string, h HandlerFunc) {
 	switch method {
 	case http.MethodConnect:
-		n.methods.connect = h
+		n.methodHandler.connect = h
 	case http.MethodDelete:
-		n.methods.delete = h
+		n.methodHandler.delete = h
 	case http.MethodGet:
-		n.methods.get = h
+		n.methodHandler.get = h
 	case http.MethodHead:
-		n.methods.head = h
+		n.methodHandler.head = h
 	case http.MethodOptions:
-		n.methods.options = h
+		n.methodHandler.options = h
 	case http.MethodPatch:
-		n.methods.patch = h
+		n.methodHandler.patch = h
 	case http.MethodPost:
-		n.methods.post = h
+		n.methodHandler.post = h
 	case PROPFIND:
-		n.methods.propfind = h
+		n.methodHandler.propfind = h
 	case http.MethodPut:
-		n.methods.put = h
+		n.methodHandler.put = h
 	case http.MethodTrace:
-		n.methods.trace = h
+		n.methodHandler.trace = h
 	case REPORT:
-		n.methods.report = h
-	case RouteNotFound:
-		n.notFoundHandler = h
-		return // RouteNotFound/404 is not considered as a handler so no further logic needs to be executed
-	default:
-		if n.methods.anyOther == nil {
-			n.methods.anyOther = make(map[string]*routeMethod)
-		}
-		if h.handler == nil {
-			delete(n.methods.anyOther, method)
-		} else {
-			n.methods.anyOther[method] = h
-		}
+		n.methodHandler.report = h
 	}
 
-	n.methods.updateAllowHeader()
-	n.isHandler = true
+	n.methodHandler.updateAllowHeader()
+	if h != nil {
+		n.isHandler = true
+	} else {
+		n.isHandler = n.methodHandler.isHandler()
+	}
 }
 
-func (n *node) findMethod(method string) *routeMethod {
+func (n *node) findHandler(method string) HandlerFunc {
 	switch method {
 	case http.MethodConnect:
-		return n.methods.connect
+		return n.methodHandler.connect
 	case http.MethodDelete:
-		return n.methods.delete
+		return n.methodHandler.delete
 	case http.MethodGet:
-		return n.methods.get
+		return n.methodHandler.get
 	case http.MethodHead:
-		return n.methods.head
+		return n.methodHandler.head
 	case http.MethodOptions:
-		return n.methods.options
+		return n.methodHandler.options
 	case http.MethodPatch:
-		return n.methods.patch
+		return n.methodHandler.patch
 	case http.MethodPost:
-		return n.methods.post
+		return n.methodHandler.post
 	case PROPFIND:
-		return n.methods.propfind
+		return n.methodHandler.propfind
 	case http.MethodPut:
-		return n.methods.put
+		return n.methodHandler.put
 	case http.MethodTrace:
-		return n.methods.trace
+		return n.methodHandler.trace
 	case REPORT:
-		return n.methods.report
-	default: // RouteNotFound/404 is not considered as a handler
-		return n.methods.anyOther[method]
+		return n.methodHandler.report
+	default:
+		return nil
 	}
 }
 
@@ -529,11 +430,12 @@ func optionsMethodHandler(allowMethods string) func(c Context) error {
 // - Return it `Echo#ReleaseContext()`.
 func (r *Router) Find(method, path string, c Context) {
 	ctx := c.(*context)
+	ctx.path = path
 	currentNode := r.tree // Current node as root
 
 	var (
 		previousBestMatchNode *node
-		matchedRouteMethod    *routeMethod
+		matchedHandler        HandlerFunc
 		// search stores the remaining path to check for match. By each iteration we move from start of path to end of the path
 		// and search value gets shorter and shorter.
 		search      = path
@@ -606,7 +508,7 @@ func (r *Router) Find(method, path string, c Context) {
 			// No matching prefix, let's backtrack to the first possible alternative node of the decision path
 			nk, ok := backtrackToNextNodeKind(staticKind)
 			if !ok {
-				return // No other possibilities on the decision path, handler will be whatever context is reset to.
+				return // No other possibilities on the decision path
 			} else if nk == paramKind {
 				goto Param
 				// NOTE: this case (backtracking from static node to previous any node) can not happen by current any matching logic. Any node is end of search currently
@@ -622,21 +524,15 @@ func (r *Router) Find(method, path string, c Context) {
 		search = search[lcpLen:]
 		searchIndex = searchIndex + lcpLen
 
-		// Finish routing if is no request path remaining to search
-		if search == "" {
-			// in case of node that is handler we have exact method type match or something for 405 to use
-			if currentNode.isHandler {
-				// check if current node has handler registered for http method we are looking for. we store currentNode as
-				// best matching in case we do no find no more routes matching this path+method
-				if previousBestMatchNode == nil {
-					previousBestMatchNode = currentNode
-				}
-				if h := currentNode.findMethod(method); h != nil {
-					matchedRouteMethod = h
-					break
-				}
-			} else if currentNode.notFoundHandler != nil {
-				matchedRouteMethod = currentNode.notFoundHandler
+		// Finish routing if no remaining search and we are on a node with handler and matching method type
+		if search == "" && currentNode.isHandler {
+			// check if current node has handler registered for http method we are looking for. we store currentNode as
+			// best matching in case we do no find no more routes matching this path+method
+			if previousBestMatchNode == nil {
+				previousBestMatchNode = currentNode
+			}
+			if h := currentNode.findHandler(method); h != nil {
+				matchedHandler = h
 				break
 			}
 		}
@@ -656,8 +552,7 @@ func (r *Router) Find(method, path string, c Context) {
 			i := 0
 			l := len(search)
 			if currentNode.isLeaf {
-				// when param node does not have any children (path param is last piece of route path) then param node should
-				// act similarly to any node - consider all remaining search as match
+				// when param node does not have any children then param node should act similarly to any node - consider all remaining search as match
 				i = l
 			} else {
 				for ; i < l && search[i] != '/'; i++ {
@@ -676,23 +571,19 @@ func (r *Router) Find(method, path string, c Context) {
 		if child := currentNode.anyChild; child != nil {
 			// If any node is found, use remaining path for paramValues
 			currentNode = child
-			paramValues[currentNode.paramsCount-1] = search
-
+			paramValues[len(currentNode.pnames)-1] = search
 			// update indexes/search in case we need to backtrack when no handler match is found
 			paramIndex++
 			searchIndex += +len(search)
 			search = ""
 
-			if h := currentNode.findMethod(method); h != nil {
-				matchedRouteMethod = h
-				break
-			}
-			// we store currentNode as best matching in case we do not find more routes matching this path+method. Needed for 405
+			// check if current node has handler registered for http method we are looking for. we store currentNode as
+			// best matching in case we do no find no more routes matching this path+method
 			if previousBestMatchNode == nil {
 				previousBestMatchNode = currentNode
 			}
-			if currentNode.notFoundHandler != nil {
-				matchedRouteMethod = currentNode.notFoundHandler
+			if h := currentNode.findHandler(method); h != nil {
+				matchedHandler = h
 				break
 			}
 		}
@@ -715,34 +606,22 @@ func (r *Router) Find(method, path string, c Context) {
 		return // nothing matched at all
 	}
 
-	// matchedHandler could be method+path handler that we matched or notFoundHandler from node with matching path
-	// user provided not found (404) handler has priority over generic method not found (405) handler or global 404 handler
-	var rPath string
-	var rPNames []string
-	if matchedRouteMethod != nil {
-		rPath = matchedRouteMethod.ppath
-		rPNames = matchedRouteMethod.pnames
-		ctx.handler = matchedRouteMethod.handler
+	if matchedHandler != nil {
+		ctx.handler = matchedHandler
 	} else {
 		// use previous match as basis. although we have no matching handler we have path match.
 		// so we can send http.StatusMethodNotAllowed (405) instead of http.StatusNotFound (404)
 		currentNode = previousBestMatchNode
 
-		rPath = currentNode.originalPath
-		rPNames = nil // no params here
 		ctx.handler = NotFoundHandler
-		if currentNode.notFoundHandler != nil {
-			rPath = currentNode.notFoundHandler.ppath
-			rPNames = currentNode.notFoundHandler.pnames
-			ctx.handler = currentNode.notFoundHandler.handler
-		} else if currentNode.isHandler {
-			ctx.Set(ContextKeyHeaderAllow, currentNode.methods.allowHeader)
+		if currentNode.isHandler {
+			ctx.Set(ContextKeyHeaderAllow, currentNode.methodHandler.allowHeader)
 			ctx.handler = MethodNotAllowedHandler
 			if method == http.MethodOptions {
-				ctx.handler = optionsMethodHandler(currentNode.methods.allowHeader)
+				ctx.handler = optionsMethodHandler(currentNode.methodHandler.allowHeader)
 			}
 		}
 	}
-	ctx.path = rPath
-	ctx.pnames = rPNames
+	ctx.path = currentNode.ppath
+	ctx.pnames = currentNode.pnames
 }

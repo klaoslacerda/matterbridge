@@ -11,8 +11,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/google/uuid"
-
 	waProto "go.mau.fi/whatsmeow/binary/proto"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/util/keys"
@@ -57,7 +55,6 @@ type AppStateSyncKey struct {
 type AppStateSyncKeyStore interface {
 	PutAppStateSyncKey(id []byte, key AppStateSyncKey) error
 	GetAppStateSyncKey(id []byte) (*AppStateSyncKey, error)
-	GetLatestAppStateSyncKeyID() ([]byte, error)
 }
 
 type AppStateMutationMAC struct {
@@ -102,30 +99,6 @@ type DeviceContainer interface {
 	DeleteDevice(store *Device) error
 }
 
-type MessageSecretInsert struct {
-	Chat   types.JID
-	Sender types.JID
-	ID     types.MessageID
-	Secret []byte
-}
-
-type MsgSecretStore interface {
-	PutMessageSecrets([]MessageSecretInsert) error
-	PutMessageSecret(chat, sender types.JID, id types.MessageID, secret []byte) error
-	GetMessageSecret(chat, sender types.JID, id types.MessageID) ([]byte, error)
-}
-
-type PrivacyToken struct {
-	User      types.JID
-	Token     []byte
-	Timestamp time.Time
-}
-
-type PrivacyTokenStore interface {
-	PutPrivacyTokens(tokens ...PrivacyToken) error
-	GetPrivacyToken(user types.JID) (*PrivacyToken, error)
-}
-
 type Device struct {
 	Log waLog.Logger
 
@@ -141,20 +114,16 @@ type Device struct {
 	BusinessName string
 	PushName     string
 
-	FacebookUUID uuid.UUID
-
-	Initialized   bool
-	Identities    IdentityStore
-	Sessions      SessionStore
-	PreKeys       PreKeyStore
-	SenderKeys    SenderKeyStore
-	AppStateKeys  AppStateSyncKeyStore
-	AppState      AppStateStore
-	Contacts      ContactStore
-	ChatSettings  ChatSettingsStore
-	MsgSecrets    MsgSecretStore
-	PrivacyTokens PrivacyTokenStore
-	Container     DeviceContainer
+	Initialized  bool
+	Identities   IdentityStore
+	Sessions     SessionStore
+	PreKeys      PreKeyStore
+	SenderKeys   SenderKeyStore
+	AppStateKeys AppStateSyncKeyStore
+	AppState     AppStateStore
+	Contacts     ContactStore
+	ChatSettings ChatSettingsStore
+	Container    DeviceContainer
 
 	DatabaseErrorHandler func(device *Device, action string, attemptIndex int, err error) (retry bool)
 }

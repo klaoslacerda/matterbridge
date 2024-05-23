@@ -65,8 +65,8 @@ func (vc WAVersionContainer) Hash() [16]byte {
 	return md5.Sum([]byte(vc.String()))
 }
 
-func (vc WAVersionContainer) ProtoAppVersion() *waProto.ClientPayload_UserAgent_AppVersion {
-	return &waProto.ClientPayload_UserAgent_AppVersion{
+func (vc WAVersionContainer) ProtoAppVersion() *waProto.AppVersion {
+	return &waProto.AppVersion{
 		Primary:   &vc[0],
 		Secondary: &vc[1],
 		Tertiary:  &vc[2],
@@ -74,7 +74,7 @@ func (vc WAVersionContainer) ProtoAppVersion() *waProto.ClientPayload_UserAgent_
 }
 
 // waVersion is the WhatsApp web client version
-var waVersion = WAVersionContainer{2, 2412, 50}
+var waVersion = WAVersionContainer{2, 2222, 11}
 
 // waVersionHash is the md5 hash of a dot-separated waVersion
 var waVersionHash [16]byte
@@ -101,9 +101,9 @@ func SetWAVersion(version WAVersionContainer) {
 }
 
 var BaseClientPayload = &waProto.ClientPayload{
-	UserAgent: &waProto.ClientPayload_UserAgent{
-		Platform:       waProto.ClientPayload_UserAgent_WEB.Enum(),
-		ReleaseChannel: waProto.ClientPayload_UserAgent_RELEASE.Enum(),
+	UserAgent: &waProto.UserAgent{
+		Platform:       waProto.UserAgent_WEB.Enum(),
+		ReleaseChannel: waProto.UserAgent_RELEASE.Enum(),
 		AppVersion:     waVersion.ProtoAppVersion(),
 		Mcc:            proto.String("000"),
 		Mnc:            proto.String("000"),
@@ -115,16 +115,19 @@ var BaseClientPayload = &waProto.ClientPayload{
 		LocaleLanguageIso6391:       proto.String("en"),
 		LocaleCountryIso31661Alpha2: proto.String("en"),
 	},
-	WebInfo: &waProto.ClientPayload_WebInfo{
-		WebSubPlatform: waProto.ClientPayload_WebInfo_WEB_BROWSER.Enum(),
+	WebInfo: &waProto.WebInfo{
+		WebSubPlatform: waProto.WebInfo_WEB_BROWSER.Enum(),
 	},
 	ConnectType:   waProto.ClientPayload_WIFI_UNKNOWN.Enum(),
 	ConnectReason: waProto.ClientPayload_USER_ACTIVATED.Enum(),
 }
 
+// Deprecated: renamed to DeviceProps
+var CompanionProps = DeviceProps
+
 var DeviceProps = &waProto.DeviceProps{
 	Os: proto.String("whatsmeow"),
-	Version: &waProto.DeviceProps_AppVersion{
+	Version: &waProto.AppVersion{
 		Primary:   proto.Uint32(0),
 		Secondary: proto.Uint32(1),
 		Tertiary:  proto.Uint32(0),
@@ -149,7 +152,7 @@ func (device *Device) getRegistrationPayload() *waProto.ClientPayload {
 	preKeyID := make([]byte, 4)
 	binary.BigEndian.PutUint32(preKeyID, device.SignedPreKey.KeyID)
 	deviceProps, _ := proto.Marshal(DeviceProps)
-	payload.DevicePairingData = &waProto.ClientPayload_DevicePairingRegistrationData{
+	payload.DevicePairingData = &waProto.DevicePairingRegistrationData{
 		ERegid:      regID,
 		EKeytype:    []byte{ecc.DjbType},
 		EIdent:      device.IdentityKey.Pub[:],

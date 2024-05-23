@@ -61,13 +61,7 @@ type (
 		// Indicates SameSite mode of the CSRF cookie.
 		// Optional. Default value SameSiteDefaultMode.
 		CookieSameSite http.SameSite `yaml:"cookie_same_site"`
-
-		// ErrorHandler defines a function which is executed for returning custom errors.
-		ErrorHandler CSRFErrorHandler
 	}
-
-	// CSRFErrorHandler is a function which is executed for creating custom errors.
-	CSRFErrorHandler func(err error, c echo.Context) error
 )
 
 // ErrCSRFInvalid is returned when CSRF check fails
@@ -119,9 +113,9 @@ func CSRFWithConfig(config CSRFConfig) echo.MiddlewareFunc {
 		config.CookieSecure = true
 	}
 
-	extractors, cErr := CreateExtractors(config.TokenLookup)
-	if cErr != nil {
-		panic(cErr)
+	extractors, err := createExtractors(config.TokenLookup, "")
+	if err != nil {
+		panic(err)
 	}
 
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
@@ -160,9 +154,8 @@ func CSRFWithConfig(config CSRFConfig) echo.MiddlewareFunc {
 						lastTokenErr = ErrCSRFInvalid
 					}
 				}
-				var finalErr error
 				if lastTokenErr != nil {
-					finalErr = lastTokenErr
+					return lastTokenErr
 				} else if lastExtractorErr != nil {
 					// ugly part to preserve backwards compatible errors. someone could rely on them
 					if lastExtractorErr == errQueryExtractorValueMissing {
@@ -174,14 +167,7 @@ func CSRFWithConfig(config CSRFConfig) echo.MiddlewareFunc {
 					} else {
 						lastExtractorErr = echo.NewHTTPError(http.StatusBadRequest, lastExtractorErr.Error())
 					}
-					finalErr = lastExtractorErr
-				}
-
-				if finalErr != nil {
-					if config.ErrorHandler != nil {
-						return config.ErrorHandler(finalErr, c)
-					}
-					return finalErr
+					return lastExtractorErr
 				}
 			}
 

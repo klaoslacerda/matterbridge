@@ -148,37 +148,12 @@ func (b *Bmatrix) Send(msg config.Message) (string, error) {
 
 	username := newMatrixUsername(msg.Username)
 
-	body := username.plain + msg.Text
-	formattedBody := username.formatted + helper.ParseMarkdown(msg.Text)
-
-	if b.GetBool("SpoofUsername") {
-		// https://spec.matrix.org/v1.3/client-server-api/#mroommember
-		type stateMember struct {
-			AvatarURL   string `json:"avatar_url,omitempty"`
-			DisplayName string `json:"displayname"`
-			Membership  string `json:"membership"`
-		}
-
-		// TODO: reset username afterwards with DisplayName: null ?
-		m := stateMember{
-			AvatarURL:   "",
-			DisplayName: username.plain,
-			Membership:  "join",
-		}
-
-		_, err := b.mc.SendStateEvent(channel, "m.room.member", b.UserID, m)
-		if err == nil {
-			body = msg.Text
-			formattedBody = helper.ParseMarkdown(msg.Text)
-		}
-	}
-
 	// Make a action /me of the message
 	if msg.Event == config.EventUserAction {
 		m := matrix.TextMessage{
 			MsgType:       "m.emote",
-			Body:          body,
-			FormattedBody: formattedBody,
+			Body:          username.plain + msg.Text,
+			FormattedBody: username.formatted + helper.ParseMarkdown(msg.Text),
 			Format:        "org.matrix.custom.html",
 		}
 
@@ -249,10 +224,10 @@ func (b *Bmatrix) Send(msg config.Message) (string, error) {
 	if msg.ID != "" {
 		rmsg := EditedMessage{
 			TextMessage: matrix.TextMessage{
-				Body:          body,
+				Body:          username.plain + msg.Text,
 				MsgType:       "m.text",
 				Format:        "org.matrix.custom.html",
-				FormattedBody: formattedBody,
+				FormattedBody: username.formatted + helper.ParseMarkdown(msg.Text),
 			},
 		}
 
@@ -291,8 +266,8 @@ func (b *Bmatrix) Send(msg config.Message) (string, error) {
 	if msg.Event == config.EventJoinLeave {
 		m := matrix.TextMessage{
 			MsgType:       "m.notice",
-			Body:          body,
-			FormattedBody: formattedBody,
+			Body:          username.plain + msg.Text,
+			FormattedBody: username.formatted + msg.Text,
 			Format:        "org.matrix.custom.html",
 		}
 
@@ -322,8 +297,8 @@ func (b *Bmatrix) Send(msg config.Message) (string, error) {
 		m := ReplyMessage{
 			TextMessage: matrix.TextMessage{
 				MsgType:       "m.text",
-				Body:          body,
-				FormattedBody: formattedBody,
+				Body:          username.plain + msg.Text,
+				FormattedBody: username.formatted + helper.ParseMarkdown(msg.Text),
 				Format:        "org.matrix.custom.html",
 			},
 		}
@@ -363,7 +338,7 @@ func (b *Bmatrix) Send(msg config.Message) (string, error) {
 		)
 
 		err = b.retry(func() error {
-			resp, err = b.mc.SendText(channel, body)
+			resp, err = b.mc.SendText(channel, username.plain+msg.Text)
 
 			return err
 		})
@@ -381,7 +356,8 @@ func (b *Bmatrix) Send(msg config.Message) (string, error) {
 	)
 
 	err = b.retry(func() error {
-		resp, err = b.mc.SendFormattedText(channel, body, formattedBody)
+		resp, err = b.mc.SendFormattedText(channel, username.plain+msg.Text,
+			username.formatted+helper.ParseMarkdown(msg.Text))
 
 		return err
 	})

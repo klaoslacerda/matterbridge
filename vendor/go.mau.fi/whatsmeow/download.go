@@ -10,19 +10,14 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"strings"
-	"time"
 
-	"go.mau.fi/util/retryafter"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 
-	"go.mau.fi/whatsmeow/binary/armadillo/waMediaTransport"
 	waProto "go.mau.fi/whatsmeow/binary/proto"
 	"go.mau.fi/whatsmeow/socket"
 	"go.mau.fi/whatsmeow/util/cbcutil"
@@ -75,7 +70,6 @@ var (
 	_ DownloadableMessage   = (*waProto.VideoMessage)(nil)
 	_ DownloadableMessage   = (*waProto.DocumentMessage)(nil)
 	_ DownloadableMessage   = (*waProto.StickerMessage)(nil)
-	_ DownloadableMessage   = (*waProto.StickerMetadata)(nil)
 	_ DownloadableMessage   = (*waProto.HistorySyncNotification)(nil)
 	_ DownloadableMessage   = (*waProto.ExternalBlobReference)(nil)
 	_ DownloadableThumbnail = (*waProto.ExtendedTextMessage)(nil)
@@ -102,7 +96,6 @@ var classToMediaType = map[protoreflect.Name]MediaType{
 	"VideoMessage":    MediaVideo,
 	"DocumentMessage": MediaDocument,
 	"StickerMessage":  MediaImage,
-	"StickerMetadata": MediaImage,
 
 	"HistorySyncNotification": MediaHistory,
 	"ExternalBlobReference":   MediaAppState,
@@ -158,10 +151,9 @@ func getSize(msg DownloadableMessage) int {
 // DownloadThumbnail downloads a thumbnail from a message.
 //
 // This is primarily intended for downloading link preview thumbnails, which are in ExtendedTextMessage:
-//
-//	var msg *waProto.Message
-//	...
-//	thumbnailImageBytes, err := cli.DownloadThumbnail(msg.GetExtendedTextMessage())
+//     var msg *waProto.Message
+//     ...
+//     thumbnailImageBytes, err := cli.DownloadThumbnail(msg.GetExtendedTextMessage())
 func (cli *Client) DownloadThumbnail(msg DownloadableThumbnail) ([]byte, error) {
 	mediaType, ok := classToThumbnailMediaType[msg.ProtoReflect().Descriptor().Name()]
 	if !ok {
@@ -181,10 +173,9 @@ func GetMediaType(msg DownloadableMessage) MediaType {
 // Download downloads the attachment from the given protobuf message.
 //
 // The attachment is a specific part of a Message protobuf struct, not the message itself, e.g.
-//
-//	var msg *waProto.Message
-//	...
-//	imageData, err := cli.Download(msg.GetImageMessage())
+//     var msg *waProto.Message
+//     ...
+//     imageData, err := cli.Download(msg.GetImageMessage())
 //
 // You can also use DownloadAny to download the first non-nil sub-message.
 func (cli *Client) Download(msg DownloadableMessage) ([]byte, error) {
@@ -197,10 +188,10 @@ func (cli *Client) Download(msg DownloadableMessage) ([]byte, error) {
 	var isWebWhatsappNetURL bool
 	if ok {
 		url = urlable.GetUrl()
-		isWebWhatsappNetURL = strings.HasPrefix(url, "https://web.whatsapp.net")
+		isWebWhatsappNetURL = strings.HasPrefix(urlable.GetUrl(), "https://web.whatsapp.net")
 	}
 	if len(url) > 0 && !isWebWhatsappNetURL {
-		return cli.downloadAndDecrypt(url, msg.GetMediaKey(), mediaType, getSize(msg), msg.GetFileEncSha256(), msg.GetFileSha256())
+		return cli.downloadAndDecrypt(urlable.GetUrl(), msg.GetMediaKey(), mediaType, getSize(msg), msg.GetFileEncSha256(), msg.GetFileSha256())
 	} else if len(msg.GetDirectPath()) > 0 {
 		return cli.DownloadMediaWithPath(msg.GetDirectPath(), msg.GetFileEncSha256(), msg.GetFileSha256(), msg.GetMediaKey(), getSize(msg), mediaType, mediaTypeToMMSType[mediaType])
 	} else {
@@ -209,10 +200,6 @@ func (cli *Client) Download(msg DownloadableMessage) ([]byte, error) {
 		}
 		return nil, ErrNoURLPresent
 	}
-}
-
-func (cli *Client) DownloadFB(transport *waMediaTransport.WAMediaTransport_Integral, mediaType MediaType) ([]byte, error) {
-	return cli.DownloadMediaWithPath(transport.GetDirectPath(), transport.GetFileEncSHA256(), transport.GetFileSHA256(), transport.GetMediaKey(), -1, mediaType, mediaTypeToMMSType[mediaType])
 }
 
 // DownloadMediaWithPath downloads an attachment by manually specifying the path and encryption details.
@@ -226,16 +213,15 @@ func (cli *Client) DownloadMediaWithPath(directPath string, encFileHash, fileHas
 		mmsType = mediaTypeToMMSType[mediaType]
 	}
 	for i, host := range mediaConn.Hosts {
-		// TODO omit hash for unencrypted media?
 		mediaURL := fmt.Sprintf("https://%s%s&hash=%s&mms-type=%s&__wa-mms=", host.Hostname, directPath, base64.URLEncoding.EncodeToString(encFileHash), mmsType)
 		data, err = cli.downloadAndDecrypt(mediaURL, mediaKey, mediaType, fileLength, encFileHash, fileHash)
-		if err == nil {
-			return
-		} else if i >= len(mediaConn.Hosts)-1 {
-			return nil, fmt.Errorf("failed to download media from last host: %w", err)
-		}
 		// TODO there are probably some errors that shouldn't retry
-		cli.Log.Warnf("Failed to download media: %s, trying with next host...", err)
+		if err != nil {
+			if i >= len(mediaConn.Hosts)-1 {
+				return nil, fmt.Errorf("failed to download media from last host: %w", err)
+			}
+			cli.Log.Warnf("Failed to download media: %s, trying with next host...", err)
+		}
 	}
 	return
 }
@@ -243,11 +229,8 @@ func (cli *Client) DownloadMediaWithPath(directPath string, encFileHash, fileHas
 func (cli *Client) downloadAndDecrypt(url string, mediaKey []byte, appInfo MediaType, fileLength int, fileEncSha256, fileSha256 []byte) (data []byte, err error) {
 	iv, cipherKey, macKey, _ := getMediaKeys(mediaKey, appInfo)
 	var ciphertext, mac []byte
-	if ciphertext, mac, err = cli.downloadPossiblyEncryptedMediaWithRetries(url, fileEncSha256); err != nil {
+	if ciphertext, mac, err = cli.downloadEncryptedMedia(url, fileEncSha256); err != nil {
 
-	} else if mediaKey == nil && fileEncSha256 == nil && mac == nil {
-		// Unencrypted media, just return the downloaded data
-		data = ciphertext
 	} else if err = validateMedia(iv, ciphertext, macKey, mac); err != nil {
 
 	} else if data, err = cbcutil.Decrypt(cipherKey, iv, ciphertext); err != nil {
@@ -265,59 +248,33 @@ func getMediaKeys(mediaKey []byte, appInfo MediaType) (iv, cipherKey, macKey, re
 	return mediaKeyExpanded[:16], mediaKeyExpanded[16:48], mediaKeyExpanded[48:80], mediaKeyExpanded[80:]
 }
 
-func shouldRetryMediaDownload(err error) bool {
-	var netErr net.Error
-	var httpErr DownloadHTTPError
-	return errors.As(err, &netErr) ||
-		strings.HasPrefix(err.Error(), "stream error:") || // hacky check for http2 errors
-		(errors.As(err, &httpErr) && retryafter.Should(httpErr.StatusCode, true))
-}
-
-func (cli *Client) downloadPossiblyEncryptedMediaWithRetries(url string, checksum []byte) (file, mac []byte, err error) {
-	for retryNum := 0; retryNum < 5; retryNum++ {
-		if checksum == nil {
-			file, err = cli.downloadMedia(url)
-		} else {
-			file, mac, err = cli.downloadEncryptedMedia(url, checksum)
-		}
-		if err == nil || !shouldRetryMediaDownload(err) {
-			return
-		}
-		retryDuration := time.Duration(retryNum+1) * time.Second
-		var httpErr DownloadHTTPError
-		if errors.As(err, &httpErr) {
-			retryDuration = retryafter.Parse(httpErr.Response.Header.Get("Retry-After"), retryDuration)
-		}
-		cli.Log.Warnf("Failed to download media due to network error: %w, retrying in %s...", err, retryDuration)
-		time.Sleep(retryDuration)
-	}
-	return
-}
-
-func (cli *Client) downloadMedia(url string) ([]byte, error) {
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+func (cli *Client) downloadEncryptedMedia(url string, checksum []byte) (file, mac []byte, err error) {
+	var req *http.Request
+	req, err = http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to prepare request: %w", err)
+		err = fmt.Errorf("failed to prepare request: %w", err)
+		return
 	}
 	req.Header.Set("Origin", socket.Origin)
 	req.Header.Set("Referer", socket.Origin+"/")
-	if cli.MessengerConfig != nil {
-		req.Header.Set("User-Agent", cli.MessengerConfig.UserAgent)
-	}
-	// TODO user agent for whatsapp downloads?
-	resp, err := cli.http.Do(req)
+	var resp *http.Response
+	resp, err = cli.http.Do(req)
 	if err != nil {
-		return nil, err
+		return
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, DownloadHTTPError{Response: resp}
+		if resp.StatusCode == http.StatusNotFound {
+			err = ErrMediaDownloadFailedWith404
+		} else if resp.StatusCode == http.StatusGone {
+			err = ErrMediaDownloadFailedWith410
+		} else {
+			err = fmt.Errorf("download failed with status code %d", resp.StatusCode)
+		}
+		return
 	}
-	return io.ReadAll(resp.Body)
-}
-
-func (cli *Client) downloadEncryptedMedia(url string, checksum []byte) (file, mac []byte, err error) {
-	data, err := cli.downloadMedia(url)
+	var data []byte
+	data, err = io.ReadAll(resp.Body)
 	if err != nil {
 		return
 	} else if len(data) <= 10 {

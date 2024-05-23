@@ -42,14 +42,7 @@ func (b *Bmumble) handleTextMessage(event *gumble.TextMessageEvent) {
 		if part.Image == nil {
 			rmsg.Text = part.Text
 		} else {
-			fileExt := part.FileExtension
-			if fileExt == ".jfif" {
-				fileExt = ".jpg"
-			}
-			if fileExt == ".jpe" {
-				fileExt = ".jpg"
-			}
-			fname := b.Account + "_" + strconv.FormatInt(now.UnixNano(), 10) + "_" + strconv.Itoa(i) + fileExt
+			fname := b.Account + "_" + strconv.FormatInt(now.UnixNano(), 10) + "_" + strconv.Itoa(i) + part.FileExtension
 			rmsg.Extra = make(map[string][]interface{})
 			if err = helper.HandleDownloadSize(b.Log, &rmsg, fname, int64(len(part.Image)), b.General); err != nil {
 				b.Log.WithError(err).Warn("not including image in message")
@@ -69,6 +62,7 @@ func (b *Bmumble) handleConnect(event *gumble.ConnectEvent) {
 	}
 	// No need to talk or listen
 	event.Client.Self.SetSelfDeafened(true)
+	event.Client.Self.SetSelfMuted(true)
 	// if the Channel variable is set, this is a reconnect -> rejoin channel
 	if b.Channel != nil {
 		if err := b.doJoin(event.Client, *b.Channel); err != nil {
@@ -84,72 +78,16 @@ func (b *Bmumble) handleConnect(event *gumble.ConnectEvent) {
 	}
 }
 
-func (b *Bmumble) handleJoinLeave(event *gumble.UserChangeEvent) {
-	// Ignore events happening before setup is done
-	if b.Channel == nil {
+func (b *Bmumble) handleUserChange(event *gumble.UserChangeEvent) {
+	// Only care about changes to self
+	if event.User != event.Client.Self {
 		return
 	}
-	if b.GetBool("nosendjoinpart") {
-		return
-	}
-	b.Log.Debugf("Received gumble user change event: %+v", event)
-
-	text := ""
-	switch {
-	case event.Type&gumble.UserChangeKicked > 0:
-		text = " was kicked"
-	case event.Type&gumble.UserChangeBanned > 0:
-		text = " was banned"
-	case event.Type&gumble.UserChangeDisconnected > 0:
-		if event.User.Channel != nil && event.User.Channel.ID == *b.Channel {
-			text = " left"
-		}
-	case event.Type&gumble.UserChangeConnected > 0:
-		if event.User.Channel != nil && event.User.Channel.ID == *b.Channel {
-			text = " joined"
-		}
-	case event.Type&gumble.UserChangeChannel > 0:
-		// Treat Mumble channel changes the same as connects/disconnects; as far as matterbridge is concerned, they are identical
-		if event.User.Channel != nil && event.User.Channel.ID == *b.Channel {
-			text = " joined"
-		} else {
-			text = " left"
-		}
-	}
-
-	if text != "" {
-		b.Remote <- config.Message{
-			Username: "system",
-			Text:     event.User.Name + text,
-			Channel:  strconv.FormatUint(uint64(*b.Channel), 10),
-			Account:  b.Account,
-			Event:    config.EventJoinLeave,
-		}
-	}
-}
-
-func (b *Bmumble) handleUserModified(event *gumble.UserChangeEvent) {
-	// Ignore events happening before setup is done
-	if b.Channel == nil {
-		return
-	}
-
-	if event.Type&gumble.UserChangeChannel > 0 {
-		// Someone attempted to move the user out of the configured channel; attempt to join back
+	// Someone attempted to move the user out of the configured channel; attempt to join back
+	if b.Channel != nil {
 		if err := b.doJoin(event.Client, *b.Channel); err != nil {
 			b.Log.Error(err)
 		}
-	}
-}
-
-func (b *Bmumble) handleUserChange(event *gumble.UserChangeEvent) {
-	// The UserChangeEvent is used for both the gumble client itself as well as other clients
-	if event.User != event.Client.Self {
-		// other users
-		b.handleJoinLeave(event)
-	} else {
-		// gumble user
-		b.handleUserModified(event)
 	}
 }
 

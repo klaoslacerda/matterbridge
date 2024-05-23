@@ -10,6 +10,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	waBinary "go.mau.fi/whatsmeow/binary"
@@ -17,7 +18,7 @@ import (
 )
 
 func (cli *Client) generateRequestID() string {
-	return cli.uniqueID + strconv.FormatUint(cli.idCounter.Add(1), 10)
+	return cli.uniqueID + strconv.FormatUint(uint64(atomic.AddUint32(&cli.idCounter, 1)), 10)
 }
 
 var xmlStreamEndNode = &waBinary.Node{Tag: "xmlstreamend"}
@@ -138,15 +139,13 @@ func (cli *Client) sendIQAsync(query infoQuery) (<-chan *waBinary.Node, error) {
 	return ch, err
 }
 
-const defaultRequestTimeout = 75 * time.Second
-
 func (cli *Client) sendIQ(query infoQuery) (*waBinary.Node, error) {
 	resChan, data, err := cli.sendIQAsyncAndGetData(&query)
 	if err != nil {
 		return nil, err
 	}
 	if query.Timeout == 0 {
-		query.Timeout = defaultRequestTimeout
+		query.Timeout = 75 * time.Second
 	}
 	if query.Context == nil {
 		query.Context = context.Background()
@@ -202,17 +201,17 @@ func (cli *Client) retryFrame(reqType, id string, data []byte, origResp *waBinar
 		return nil, err
 	}
 	var resp *waBinary.Node
-	timeoutChan := make(<-chan time.Time, 1)
-	if timeout > 0 {
-		timeoutChan = time.After(timeout)
-	}
-	select {
-	case resp = <-respChan:
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case <-timeoutChan:
-		// FIXME this error isn't technically correct (but works for now - the timeout param is only used from sendIQ)
-		return nil, ErrIQTimedOut
+	if ctx != nil && timeout > 0 {
+		select {
+		case resp = <-respChan:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(timeout):
+			// FIXME this error isn't technically correct (but works for now - the ctx and timeout params are only used from sendIQ)
+			return nil, ErrIQTimedOut
+		}
+	} else {
+		resp = <-respChan
 	}
 	if isDisconnectNode(resp) {
 		cli.Log.Debugf("Retrying %s %s was interrupted by websocket disconnection (%v), not retrying anymore", reqType, id, resp.XMLString())

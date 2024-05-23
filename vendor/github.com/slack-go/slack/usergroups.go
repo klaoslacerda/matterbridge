@@ -183,77 +183,32 @@ func (api *Client) GetUserGroupsContext(ctx context.Context, options ...GetUserG
 	return response.UserGroups, nil
 }
 
-// UpdateUserGroupsOption options for the UpdateUserGroup method call.
-type UpdateUserGroupsOption func(*UpdateUserGroupsParams)
-
-// UpdateUserGroupsOptionName change the name of the User Group (default: empty, so it's no-op)
-func UpdateUserGroupsOptionName(name string) UpdateUserGroupsOption {
-	return func(params *UpdateUserGroupsParams) {
-		params.Name = name
-	}
-}
-
-// UpdateUserGroupsOptionHandle change the handle of the User Group (default: empty, so it's no-op)
-func UpdateUserGroupsOptionHandle(handle string) UpdateUserGroupsOption {
-	return func(params *UpdateUserGroupsParams) {
-		params.Handle = handle
-	}
-}
-
-// UpdateUserGroupsOptionDescription change the description of the User Group. (default: nil, so it's no-op)
-func UpdateUserGroupsOptionDescription(description *string) UpdateUserGroupsOption {
-	return func(params *UpdateUserGroupsParams) {
-		params.Description = description
-	}
-}
-
-// UpdateUserGroupsOptionChannels change the default channels of the User Group. (default: unspecified, so it's no-op)
-func UpdateUserGroupsOptionChannels(channels []string) UpdateUserGroupsOption {
-	return func(params *UpdateUserGroupsParams) {
-		params.Channels = &channels
-	}
-}
-
-// UpdateUserGroupsParams contains arguments for UpdateUserGroup method call
-type UpdateUserGroupsParams struct {
-	Name        string
-	Handle      string
-	Description *string
-	Channels    *[]string
-}
-
 // UpdateUserGroup will update an existing user group
-func (api *Client) UpdateUserGroup(userGroupID string, options ...UpdateUserGroupsOption) (UserGroup, error) {
-	return api.UpdateUserGroupContext(context.Background(), userGroupID, options...)
+func (api *Client) UpdateUserGroup(userGroup UserGroup) (UserGroup, error) {
+	return api.UpdateUserGroupContext(context.Background(), userGroup)
 }
 
 // UpdateUserGroupContext will update an existing user group with a custom context
-func (api *Client) UpdateUserGroupContext(ctx context.Context, userGroupID string, options ...UpdateUserGroupsOption) (UserGroup, error) {
-	params := UpdateUserGroupsParams{}
-
-	for _, opt := range options {
-		opt(&params)
-	}
-
+func (api *Client) UpdateUserGroupContext(ctx context.Context, userGroup UserGroup) (UserGroup, error) {
 	values := url.Values{
 		"token":     {api.token},
-		"usergroup": {userGroupID},
+		"usergroup": {userGroup.ID},
 	}
 
-	if params.Name != "" {
-		values["name"] = []string{params.Name}
+	if userGroup.Name != "" {
+		values["name"] = []string{userGroup.Name}
 	}
 
-	if params.Handle != "" {
-		values["handle"] = []string{params.Handle}
+	if userGroup.Handle != "" {
+		values["handle"] = []string{userGroup.Handle}
 	}
 
-	if params.Description != nil {
-		values["description"] = []string{*params.Description}
+	if userGroup.Description != "" {
+		values["description"] = []string{userGroup.Description}
 	}
 
-	if params.Channels != nil {
-		values["channels"] = []string{strings.Join(*params.Channels, ",")}
+	if len(userGroup.Prefs.Channels) > 0 {
+		values["channels"] = []string{strings.Join(userGroup.Prefs.Channels, ",")}
 	}
 
 	response, err := api.userGroupRequest(ctx, "usergroups.update", values)

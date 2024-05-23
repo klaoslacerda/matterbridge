@@ -39,10 +39,16 @@ type Ready struct {
 	Version         int          `json:"v"`
 	SessionID       string       `json:"session_id"`
 	User            *User        `json:"user"`
-	Shard           *[2]int      `json:"shard"`
-	Application     *Application `json:"application"`
-	Guilds          []*Guild     `json:"guilds"`
+	ReadState       []*ReadState `json:"read_state"`
 	PrivateChannels []*Channel   `json:"private_channels"`
+	Guilds          []*Guild     `json:"guilds"`
+
+	// Undocumented fields
+	Settings          *Settings            `json:"user_settings"`
+	UserGuildSettings []*UserGuildSettings `json:"user_guild_settings"`
+	Relationships     []*Relationship      `json:"relationships"`
+	Presences         []*Presence          `json:"presences"`
+	Notes             map[string]string    `json:"notes"`
 }
 
 // ChannelCreate is the data for a ChannelCreate event.
@@ -150,7 +156,6 @@ type GuildMemberAdd struct {
 // GuildMemberUpdate is the data for a GuildMemberUpdate event.
 type GuildMemberUpdate struct {
 	*Member
-	BeforeUpdate *Member `json:"-"`
 }
 
 // GuildMemberRemove is the data for a GuildMemberRemove event.
@@ -240,6 +245,12 @@ type GuildScheduledEventUserRemove struct {
 	GuildID               string `json:"guild_id"`
 }
 
+// MessageAck is the data for a MessageAck event.
+type MessageAck struct {
+	MessageID string `json:"message_id"`
+	ChannelID string `json:"channel_id"`
+}
+
 // MessageCreate is the data for a MessageCreate event.
 type MessageCreate struct {
 	*Message
@@ -303,6 +314,16 @@ type Resumed struct {
 	Trace []string `json:"_trace"`
 }
 
+// RelationshipAdd is the data for a RelationshipAdd event.
+type RelationshipAdd struct {
+	*Relationship
+}
+
+// RelationshipRemove is the data for a RelationshipRemove event.
+type RelationshipRemove struct {
+	*Relationship
+}
+
 // TypingStart is the data for a TypingStart event.
 type TypingStart struct {
 	UserID    string `json:"user_id"`
@@ -314,6 +335,20 @@ type TypingStart struct {
 // UserUpdate is the data for a UserUpdate event.
 type UserUpdate struct {
 	*User
+}
+
+// UserSettingsUpdate is the data for a UserSettingsUpdate event.
+type UserSettingsUpdate map[string]interface{}
+
+// UserGuildSettingsUpdate is the data for a UserGuildSettingsUpdate event.
+type UserGuildSettingsUpdate struct {
+	*UserGuildSettings
+}
+
+// UserNoteUpdate is the data for a UserNoteUpdate event.
+type UserNoteUpdate struct {
+	ID   string `json:"id"`
+	Note string `json:"note"`
 }
 
 // VoiceServerUpdate is the data for a VoiceServerUpdate event.
@@ -365,39 +400,4 @@ type InviteDelete struct {
 	ChannelID string `json:"channel_id"`
 	GuildID   string `json:"guild_id"`
 	Code      string `json:"code"`
-}
-
-// ApplicationCommandPermissionsUpdate is the data for an ApplicationCommandPermissionsUpdate event
-type ApplicationCommandPermissionsUpdate struct {
-	*GuildApplicationCommandPermissions
-}
-
-// AutoModerationRuleCreate is the data for an AutoModerationRuleCreate event.
-type AutoModerationRuleCreate struct {
-	*AutoModerationRule
-}
-
-// AutoModerationRuleUpdate is the data for an AutoModerationRuleUpdate event.
-type AutoModerationRuleUpdate struct {
-	*AutoModerationRule
-}
-
-// AutoModerationRuleDelete is the data for an AutoModerationRuleDelete event.
-type AutoModerationRuleDelete struct {
-	*AutoModerationRule
-}
-
-// AutoModerationActionExecution is the data for an AutoModerationActionExecution event.
-type AutoModerationActionExecution struct {
-	GuildID              string                        `json:"guild_id"`
-	Action               AutoModerationAction          `json:"action"`
-	RuleID               string                        `json:"rule_id"`
-	RuleTriggerType      AutoModerationRuleTriggerType `json:"rule_trigger_type"`
-	UserID               string                        `json:"user_id"`
-	ChannelID            string                        `json:"channel_id"`
-	MessageID            string                        `json:"message_id"`
-	AlertSystemMessageID string                        `json:"alert_system_message_id"`
-	Content              string                        `json:"content"`
-	MatchedKeyword       string                        `json:"matched_keyword"`
-	MatchedContent       string                        `json:"matched_content"`
 }

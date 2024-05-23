@@ -29,8 +29,8 @@ func (p *Parser) documentMatter(data []byte) int {
 		return 0
 	}
 	node := &ast.DocumentMatter{Matter: matter}
-	p.AddBlock(node)
-	p.Finalize(node)
+	p.addBlock(node)
+	p.finalize(node)
 
 	return consumed
 }

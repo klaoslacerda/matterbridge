@@ -1138,10 +1138,6 @@ func (n *UnaryExpression) check(ctx *context, isAsmArg bool) Operand {
 	case UnaryExpressionPlus: // '+' CastExpression
 		op := n.CastExpression.check(ctx, isAsmArg)
 		n.IsSideEffectsFree = n.CastExpression.IsSideEffectsFree
-		if op == nil {
-			//TODO report error
-			break
-		}
 		if !op.Type().IsArithmeticType() {
 			//TODO report error
 			break
@@ -1154,10 +1150,6 @@ func (n *UnaryExpression) check(ctx *context, isAsmArg bool) Operand {
 	case UnaryExpressionMinus: // '-' CastExpression
 		op := n.CastExpression.check(ctx, isAsmArg)
 		n.IsSideEffectsFree = n.CastExpression.IsSideEffectsFree
-		if op == nil {
-			//TODO report error
-			break
-		}
 		if op.Type().Kind() == Vector {
 			n.Operand = &operand{abi: &ctx.cfg.ABI, typ: op.Type()}
 			break

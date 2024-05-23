@@ -114,7 +114,6 @@ And more...
 
 ### 3rd party via matterbridge api
 
-- [Delta Chat](https://github.com/deltachat-bot/matterdelta)
 - [Discourse](https://github.com/DeclanHoare/matterbabble)
 - [Facebook messenger](https://github.com/powerjungle/fbridge-asyncio)
 - [Facebook messenger](https://github.com/VictorNine/fbridge)
@@ -147,7 +146,6 @@ Used by the projects below. Feel free to make a PR to add your project to this l
 - [Vintage Story](https://github.com/NikkyAI/vs-matterbridge)
 - [ServUO-matterbridge](https://github.com/kuoushi/ServUO-Matterbridge) (A matterbridge connector for ServUO servers)
 - [ts-matterbridge](https://github.com/Archeb/ts-matterbridge) (Integrate teamspeak chat with matterbridge)
-- [beerchat](https://github.com/mt-mods/beerchat) (Matterbridge link for minetest)
 
 ## Chat with us
 
@@ -174,7 +172,7 @@ See <https://github.com/klaoslacerda/matterbridge/wiki>
 
 ### Binaries
 
-- Latest stable release [v1.26.0](https://github.com/klaoslacerda/matterbridge/releases/latest)
+- Latest stable release [v1.25.2](https://github.com/klaoslacerda/matterbridge/releases/latest)
 - Development releases (follows master) can be downloaded [here](https://github.com/klaoslacerda/matterbridge/actions) selecting the latest green build and then artifacts.
 
 To install or upgrade just download the latest [binary](https://github.com/klaoslacerda/matterbridge/releases/latest). On \*nix platforms you may need to make the binary executable - you can do this by running `chmod a+x` on the binary (example: `chmod a+x matterbridge-1.24.1-linux-64bit`). After downloading (and making the binary executable, if necessary), follow the instructions on the [howto](https://github.com/klaoslacerda/matterbridge/wiki/How-to-create-your-config) for a step by step walkthrough for creating your configuration.
@@ -190,7 +188,7 @@ To install or upgrade just download the latest [binary](https://github.com/klaos
 Most people just want to use binaries, you can find those [here](https://github.com/klaoslacerda/matterbridge/releases/latest)
 
 If you really want to build from source, follow these instructions:
-Go 1.18+ is required. Make sure you have [Go](https://golang.org/doc/install) properly installed.
+Go 1.17+ is required. Make sure you have [Go](https://golang.org/doc/install) properly installed.
 
 Building the binary with **all** the bridges enabled needs about 3GB RAM to compile.
 You can reduce this memory requirement to 0,5GB RAM by adding the `nomsteams` tag if you don't need/use the Microsoft Teams bridge.
@@ -401,6 +399,7 @@ Matterbridge wouldn't exist without these libraries:
 
 - discord - <https://github.com/bwmarrin/discordgo>
 - echo - <https://github.com/labstack/echo>
+- gitter - <https://github.com/sromku/go-gitter>
 - gops - <https://github.com/google/gops>
 - gozulipbot - <https://github.com/ifo/gozulipbot>
 - gumble - <https://github.com/layeh/gumble>

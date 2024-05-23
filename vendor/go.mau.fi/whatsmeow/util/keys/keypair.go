@@ -8,8 +8,10 @@
 package keys
 
 import (
+	"crypto/rand"
+	"fmt"
+
 	"go.mau.fi/libsignal/ecc"
-	"go.mau.fi/util/random"
 	"golang.org/x/crypto/curve25519"
 )
 
@@ -30,7 +32,12 @@ func NewKeyPairFromPrivateKey(priv [32]byte) *KeyPair {
 }
 
 func NewKeyPair() *KeyPair {
-	priv := *(*[32]byte)(random.Bytes(32))
+	var priv [32]byte
+
+	_, err := rand.Read(priv[:])
+	if err != nil {
+		panic(fmt.Errorf("failed to generate curve25519 private key: %w", err))
+	}
 
 	priv[0] &= 248
 	priv[31] &= 127

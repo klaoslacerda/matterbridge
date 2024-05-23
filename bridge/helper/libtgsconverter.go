@@ -1,4 +1,5 @@
-//go:build cgolottie
+//go:build cgo
+// +build cgo
 
 package helper
 

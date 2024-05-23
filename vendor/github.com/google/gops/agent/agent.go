@@ -12,6 +12,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net"
 	"os"
 	gosignal "os/signal"
@@ -114,19 +115,19 @@ func Listen(opts Options) error {
 	}
 	port := listener.Addr().(*net.TCPAddr).Port
 	portfile = filepath.Join(gopsdir, strconv.Itoa(os.Getpid()))
-	err = os.WriteFile(portfile, []byte(strconv.Itoa(port)), os.ModePerm)
+	err = ioutil.WriteFile(portfile, []byte(strconv.Itoa(port)), os.ModePerm)
 	if err != nil {
 		return err
 	}
 
-	go listen(listener)
+	go listen()
 	return nil
 }
 
-func listen(l net.Listener) {
+func listen() {
 	buf := make([]byte, 1)
 	for {
-		fd, err := l.Accept()
+		fd, err := listener.Accept()
 		if err != nil {
 			// No great way to check for this, see https://golang.org/issues/4373.
 			if !strings.Contains(err.Error(), "use of closed network connection") {

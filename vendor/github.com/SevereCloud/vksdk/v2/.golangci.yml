@@ -1,11 +1,9 @@
 ---
-run:
-  timeout: 5m
-
 linters:
   disable-all: true
   enable:
     - bodyclose
+    - deadcode
     - errcheck
     - gochecknoglobals
     - goconst
@@ -21,11 +19,13 @@ linters:
     - nakedret
     - prealloc
     - staticcheck
+    - structcheck
     - stylecheck
     - typecheck
     - unconvert
     - unparam
     - unused
+    - varcheck
     - whitespace
     - wsl
     - godot
@@ -40,6 +40,7 @@ linters:
     - makezero
     - thelper
     - predeclared
+    - ifshort
     - revive
     - durationcheck
     - gomoddirectives
@@ -56,18 +57,9 @@ linters:
     - grouper
     - decorder
     - containedctx
+    # - execinquery # FIXME: panic in 1.46.0
     - nosprintfhostport
-    - usestdlibvars
 
-    - interfacebloat
-    - reassign
-
-    - testableexamples
-
-    - gocheckcompilerdirectives
-    - asasalint
-
-# - musttag # TODO: need update golangci-lint
 # - wrapcheck # TODO: v3 Fix
 # - testpackage # TODO: Fix testpackage
 # - noctx # TODO: Fix noctx
@@ -98,22 +90,11 @@ linters:
 # - errchkjson
 # - maintidx
 # - nonamedreturns
-# - nosnakecase
-# - execinquery
-# - logrlint
-
-# - dupword
-
-# - ginkgolinter
 
 # depricated
 # - maligned
 # - interfacer
 # - golint
-# - ifshort
-# - deadcode
-# - structcheck
-# - varcheck
 
 issues:
   exclude-rules:
@@ -132,9 +113,5 @@ issues:
     - linters:
         - stylecheck
       text: "ST1003:.*(Ts|ts).*TS"
-
-    - linters:
-        - gosec
-      text: "G307:"
 
   exclude-use-default: false

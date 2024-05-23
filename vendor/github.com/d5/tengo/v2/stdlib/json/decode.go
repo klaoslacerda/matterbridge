@@ -62,12 +62,9 @@ func (d *decodeState) scanNext() {
 
 // scanWhile processes bytes in d.data[d.off:] until it
 // receives a scan code not equal to op.
-func (d *decodeState) scanWhile(op int) (isFloat bool) {
+func (d *decodeState) scanWhile(op int) {
 	s, data, i := &d.scan, d.data, d.off
 	for i < len(data) {
-		if data[i] == '.' || data[i] == 'e' || data[i] == 'E' {
-			isFloat = true
-		}
 		newOp := s.step(s, data[i])
 		i++
 		if newOp != op {
@@ -79,7 +76,6 @@ func (d *decodeState) scanWhile(op int) (isFloat bool) {
 
 	d.off = len(data) + 1 // mark processed EOF with len+1
 	d.opcode = d.scan.eof()
-	return
 }
 
 func (d *decodeState) value() (tengo.Object, error) {
@@ -189,7 +185,7 @@ func (d *decodeState) object() (tengo.Object, error) {
 func (d *decodeState) literal() (tengo.Object, error) {
 	// All bytes inside literal return scanContinue op code.
 	start := d.readIndex()
-	isFloat := d.scanWhile(scanContinue)
+	d.scanWhile(scanContinue)
 
 	item := d.data[start:d.readIndex()]
 
@@ -214,12 +210,8 @@ func (d *decodeState) literal() (tengo.Object, error) {
 		if c != '-' && (c < '0' || c > '9') {
 			panic(phasePanicMsg)
 		}
-		if isFloat {
-			n, _ := strconv.ParseFloat(string(item), 10)
-			return &tengo.Float{Value: n}, nil
-		}
-		n, _ := strconv.ParseInt(string(item), 10, 64)
-		return &tengo.Int{Value: n}, nil
+		n, _ := strconv.ParseFloat(string(item), 10)
+		return &tengo.Float{Value: n}, nil
 	}
 }
 

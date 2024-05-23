@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
@@ -19,6 +20,8 @@ import (
 	waLog "go.mau.fi/whatsmeow/util/log"
 )
 
+type Proxy = func(*http.Request) (*url.URL, error)
+
 type FrameSocket struct {
 	conn   *websocket.Conn
 	ctx    context.Context
@@ -26,15 +29,12 @@ type FrameSocket struct {
 	log    waLog.Logger
 	lock   sync.Mutex
 
-	URL         string
-	HTTPHeaders http.Header
-
 	Frames       chan []byte
 	OnDisconnect func(remote bool)
 	WriteTimeout time.Duration
 
 	Header []byte
-	Dialer websocket.Dialer
+	Proxy  Proxy
 
 	incomingLength int
 	receivedLength int
@@ -42,17 +42,14 @@ type FrameSocket struct {
 	partialHeader  []byte
 }
 
-func NewFrameSocket(log waLog.Logger, dialer websocket.Dialer) *FrameSocket {
+func NewFrameSocket(log waLog.Logger, header []byte, proxy Proxy) *FrameSocket {
 	return &FrameSocket{
 		conn:   nil,
 		log:    log,
-		Header: WAConnHeader,
+		Header: header,
 		Frames: make(chan []byte),
 
-		URL:         URL,
-		HTTPHeaders: http.Header{"Origin": {Origin}},
-
-		Dialer: dialer,
+		Proxy: proxy,
 	}
 }
 
@@ -101,9 +98,13 @@ func (fs *FrameSocket) Connect() error {
 		return ErrSocketAlreadyOpen
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	dialer := websocket.Dialer{
+		Proxy: fs.Proxy,
+	}
 
-	fs.log.Debugf("Dialing %s", fs.URL)
-	conn, _, err := fs.Dialer.Dial(fs.URL, fs.HTTPHeaders)
+	headers := http.Header{"Origin": []string{Origin}}
+	fs.log.Debugf("Dialing %s", URL)
+	conn, _, err := dialer.Dial(URL, headers)
 	if err != nil {
 		cancel()
 		return fmt.Errorf("couldn't dial whatsapp web websocket: %w", err)

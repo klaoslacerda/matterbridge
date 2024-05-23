@@ -1,4 +1,4 @@
-// Auto-generated to Go types using avdl-compiler v1.4.10 (https://github.com/keybase/node-avdl-compiler)
+// Auto-generated to Go types using avdl-compiler v1.4.8 (https://github.com/keybase/node-avdl-compiler)
 //   Input file: ../client/protocol/avdl/chat1/remote.avdl
 
 package chat1
@@ -704,22 +704,6 @@ func (o DeleteConversationRemoteRes) DeepCopy() DeleteConversationRemoteRes {
 	}
 }
 
-type RemoveFromConversationRemoteRes struct {
-	RateLimit *RateLimit `codec:"rateLimit,omitempty" json:"rateLimit,omitempty"`
-}
-
-func (o RemoveFromConversationRemoteRes) DeepCopy() RemoveFromConversationRemoteRes {
-	return RemoveFromConversationRemoteRes{
-		RateLimit: (func(x *RateLimit) *RateLimit {
-			if x == nil {
-				return nil
-			}
-			tmp := (*x).DeepCopy()
-			return &tmp
-		})(o.RateLimit),
-	}
-}
-
 type GetMessageBeforeRes struct {
 	MsgID     MessageID  `codec:"msgID" json:"msgID"`
 	RateLimit *RateLimit `codec:"rateLimit,omitempty" json:"rateLimit,omitempty"`
@@ -1131,12 +1115,11 @@ func (o RemoteBotCommandsAdvertisement) DeepCopy() RemoteBotCommandsAdvertisemen
 }
 
 type BotCommandConv struct {
-	Uid               gregor1.UID                 `codec:"uid" json:"uid"`
-	UntrustedTeamRole keybase1.TeamRole           `codec:"untrustedTeamRole" json:"untrustedTeamRole"`
-	ConvID            ConversationID              `codec:"convID" json:"convID"`
-	Vers              CommandConvVers             `codec:"vers" json:"vers"`
-	Mtime             gregor1.Time                `codec:"mtime" json:"mtime"`
-	Typ               BotCommandsAdvertisementTyp `codec:"typ" json:"typ"`
+	Uid               gregor1.UID       `codec:"uid" json:"uid"`
+	UntrustedTeamRole keybase1.TeamRole `codec:"untrustedTeamRole" json:"untrustedTeamRole"`
+	ConvID            ConversationID    `codec:"convID" json:"convID"`
+	Vers              CommandConvVers   `codec:"vers" json:"vers"`
+	Mtime             gregor1.Time      `codec:"mtime" json:"mtime"`
 }
 
 func (o BotCommandConv) DeepCopy() BotCommandConv {
@@ -1146,7 +1129,6 @@ func (o BotCommandConv) DeepCopy() BotCommandConv {
 		ConvID:            o.ConvID.DeepCopy(),
 		Vers:              o.Vers.DeepCopy(),
 		Mtime:             o.Mtime.DeepCopy(),
-		Typ:               o.Typ.DeepCopy(),
 	}
 }
 

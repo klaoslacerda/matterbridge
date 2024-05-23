@@ -26,7 +26,7 @@ const (
 const (
 	NoiseStartPattern = "Noise_XX_25519_AESGCM_SHA256\x00\x00\x00\x00"
 
-	WAMagicValue = 6
+	WAMagicValue = 5
 )
 
 var WAConnHeader = []byte{'W', 'A', WAMagicValue, token.DictVersion}

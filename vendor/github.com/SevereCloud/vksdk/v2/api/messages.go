@@ -116,16 +116,6 @@ func (vk *VK) MessagesEditChat(params Params) (response int, err error) {
 	return
 }
 
-// MessagesForceCallFinish method.
-//
-// Deprecated: Use CallsForceFinish
-//
-// https://vk.com/dev/messages.forceCallFinish
-func (vk *VK) MessagesForceCallFinish(params Params) (response int, err error) {
-	err = vk.RequestUnmarshal("messages.forceCallFinish", &response, params)
-	return
-}
-
 // MessagesGetByConversationMessageIDResponse struct.
 type MessagesGetByConversationMessageIDResponse struct {
 	Count int                      `json:"count"`
@@ -152,7 +142,7 @@ type MessagesGetByIDResponse struct {
 
 // MessagesGetByID returns messages by their IDs.
 //
-//	extended=0
+// 	extended=0
 //
 // https://vk.com/dev/messages.getById
 func (vk *VK) MessagesGetByID(params Params) (response MessagesGetByIDResponse, err error) {
@@ -170,7 +160,7 @@ type MessagesGetByIDExtendedResponse struct {
 
 // MessagesGetByIDExtended returns messages by their IDs.
 //
-//	extended=1
+// 	extended=1
 //
 // https://vk.com/dev/messages.getById
 func (vk *VK) MessagesGetByIDExtended(params Params) (response MessagesGetByIDExtendedResponse, err error) {
@@ -270,7 +260,7 @@ type MessagesGetConversationsByIDResponse struct {
 
 // MessagesGetConversationsByID returns conversations by their IDs.
 //
-//	extended=0
+// 	extended=0
 //
 // https://vk.com/dev/messages.getConversationsById
 func (vk *VK) MessagesGetConversationsByID(params Params) (response MessagesGetConversationsByIDResponse, err error) {
@@ -288,7 +278,7 @@ type MessagesGetConversationsByIDExtendedResponse struct {
 
 // MessagesGetConversationsByIDExtended returns conversations by their IDs.
 //
-//	extended=1
+// 	extended=1
 //
 // https://vk.com/dev/messages.getConversationsById
 func (vk *VK) MessagesGetConversationsByIDExtended(params Params) (
@@ -585,7 +575,7 @@ type MessagesSendUserIDsResponse []struct {
 
 // MessagesSendPeerIDs sends a message.
 //
-//	need peer_ids;
+// 	need peer_ids;
 //
 // https://vk.com/dev/messages.send
 func (vk *VK) MessagesSendPeerIDs(params Params) (response MessagesSendUserIDsResponse, err error) {
@@ -595,7 +585,7 @@ func (vk *VK) MessagesSendPeerIDs(params Params) (response MessagesSendUserIDsRe
 
 // MessagesSendUserIDs sends a message.
 //
-//	need user_ids or peer_ids;
+// 	need user_ids or peer_ids;
 //
 // https://vk.com/dev/messages.send
 //
@@ -640,22 +630,6 @@ type MessagesSetChatPhotoResponse struct {
 // https://vk.com/dev/messages.setChatPhoto
 func (vk *VK) MessagesSetChatPhoto(params Params) (response MessagesSetChatPhotoResponse, err error) {
 	err = vk.RequestUnmarshal("messages.setChatPhoto", &response, params)
-	return
-}
-
-// MessagesStartCallResponse struct.
-type MessagesStartCallResponse struct {
-	JoinLink string `json:"join_link"`
-	CallID   string `json:"call_id"`
-}
-
-// MessagesStartCall method.
-//
-// Deprecated: Use CallsStart
-//
-// https://vk.com/dev/messages.startCall
-func (vk *VK) MessagesStartCall(params Params) (response MessagesStartCallResponse, err error) {
-	err = vk.RequestUnmarshal("messages.startCall", &response, params)
 	return
 }
 

@@ -11,6 +11,7 @@ import (
 	"math/rand"
 	"time"
 
+	waBinary "go.mau.fi/whatsmeow/binary"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 )
@@ -22,13 +23,10 @@ var (
 	KeepAliveIntervalMin = 20 * time.Second
 	// KeepAliveIntervalMax specifies the maximum interval for websocket keepalive pings.
 	KeepAliveIntervalMax = 30 * time.Second
-
-	// KeepAliveMaxFailTime specifies the maximum time to wait before forcing a reconnect if keepalives fail repeatedly.
-	KeepAliveMaxFailTime = 3 * time.Minute
 )
 
 func (cli *Client) keepAliveLoop(ctx context.Context) {
-	lastSuccess := time.Now()
+	var lastSuccess time.Time
 	var errorCount int
 	for {
 		interval := rand.Int63n(KeepAliveIntervalMax.Milliseconds()-KeepAliveIntervalMin.Milliseconds()) + KeepAliveIntervalMin.Milliseconds()
@@ -43,11 +41,6 @@ func (cli *Client) keepAliveLoop(ctx context.Context) {
 					ErrorCount:  errorCount,
 					LastSuccess: lastSuccess,
 				})
-				if cli.EnableAutoReconnect && time.Since(lastSuccess) > KeepAliveMaxFailTime {
-					cli.Log.Debugf("Forcing reconnect due to keepalive failure")
-					cli.Disconnect()
-					go cli.autoReconnect()
-				}
 			} else {
 				if errorCount > 0 {
 					errorCount = 0
@@ -66,6 +59,7 @@ func (cli *Client) sendKeepAlive(ctx context.Context) (isSuccess, shouldContinue
 		Namespace: "w:p",
 		Type:      "get",
 		To:        types.ServerJID,
+		Content:   []waBinary.Node{{Tag: "ping"}},
 	})
 	if err != nil {
 		cli.Log.Warnf("Failed to send keepalive: %v", err)

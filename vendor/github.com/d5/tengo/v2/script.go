@@ -247,8 +247,8 @@ func (c *Compiled) RunContext(ctx context.Context) (err error) {
 // Clone creates a new copy of Compiled. Cloned copies are safe for concurrent
 // use by multiple goroutines.
 func (c *Compiled) Clone() *Compiled {
-	c.lock.RLock()
-	defer c.lock.RUnlock()
+	c.lock.Lock()
+	defer c.lock.Unlock()
 
 	clone := &Compiled{
 		globalIndexes: c.globalIndexes,
@@ -259,7 +259,7 @@ func (c *Compiled) Clone() *Compiled {
 	// copy global objects
 	for idx, g := range c.globals {
 		if g != nil {
-			clone.globals[idx] = g.Copy()
+			clone.globals[idx] = g
 		}
 	}
 	return clone

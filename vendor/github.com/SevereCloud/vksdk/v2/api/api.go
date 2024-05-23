@@ -152,7 +152,7 @@ type Params map[string]interface{}
 // cyrillic symbols will be transliterated automatically.
 // Numeric format from account.getInfo is supported as well.
 //
-//	p.Lang(object.LangRU)
+// 	p.Lang(object.LangRU)
 //
 // See all language code in module object.
 func (p Params) Lang(v int) Params {
@@ -203,13 +203,10 @@ func buildQuery(sliceParams ...Params) (context.Context, url.Values) {
 
 	for _, params := range sliceParams {
 		for key, value := range params {
-			switch key {
-			case "access_token":
-				continue
-			case ":context":
-				ctx = value.(context.Context)
-			default:
+			if key != ":context" {
 				query.Set(key, FmtValue(value, 0))
+			} else {
+				ctx = value.(context.Context)
 			}
 		}
 	}
@@ -248,7 +245,7 @@ func (vk *VK) DefaultHandler(method string, sliceParams ...Params) (Response, er
 
 		rawBody := bytes.NewBufferString(query.Encode())
 
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, rawBody)
+		req, err := http.NewRequestWithContext(ctx, "POST", u, rawBody)
 		if err != nil {
 			return response, err
 		}
@@ -257,9 +254,6 @@ func (vk *VK) DefaultHandler(method string, sliceParams ...Params) (Response, er
 		if vk.zstd {
 			acceptEncoding = "zstd"
 		}
-
-		token := sliceParams[len(sliceParams)-1]["access_token"].(string)
-		req.Header.Set("Authorization", "Bearer "+token)
 
 		req.Header.Set("User-Agent", vk.UserAgent)
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")

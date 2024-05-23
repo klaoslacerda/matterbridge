@@ -13,7 +13,6 @@ import (
 	"os/exec"
 	gosignal "os/signal"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"syscall"
 	gotime "time"
@@ -61,15 +60,13 @@ var X__stdinp = Xstdin
 var X__stdoutp = Xstdout
 
 // user@darwin-m1:~/tmp$ cat main.c
+//  #include <xlocale.h>
+//  #include <stdio.h>
 //
-//	#include <xlocale.h>
-//	#include <stdio.h>
-//
-//	int main() {
-//		printf("%i\n", ___mb_cur_max());
-//		return 0;
-//	}
-//
+// int main() {
+// 	printf("%i\n", ___mb_cur_max());
+// 	return 0;
+// }
 // user@darwin-m1:~/tmp$ gcc main.c && ./a.out
 // 1
 // user@darwin-m1:~/tmp$
@@ -277,7 +274,11 @@ var localtime time.Tm
 
 // struct tm *localtime(const time_t *timep);
 func Xlocaltime(_ *TLS, timep uintptr) uintptr {
-	loc := getLocalLocation()
+	loc := gotime.Local
+	if r := getenv(Environ(), "TZ"); r != 0 {
+		zone, off := parseZone(GoString(r))
+		loc = gotime.FixedZone(zone, -off)
+	}
 	ut := *(*time.Time_t)(unsafe.Pointer(timep))
 	t := gotime.Unix(int64(ut), 0).In(loc)
 	localtime.Ftm_sec = int32(t.Second())
@@ -294,7 +295,11 @@ func Xlocaltime(_ *TLS, timep uintptr) uintptr {
 
 // struct tm *localtime_r(const time_t *timep, struct tm *result);
 func Xlocaltime_r(_ *TLS, timep, result uintptr) uintptr {
-	loc := getLocalLocation()
+	loc := gotime.Local
+	if r := getenv(Environ(), "TZ"); r != 0 {
+		zone, off := parseZone(GoString(r))
+		loc = gotime.FixedZone(zone, -off)
+	}
 	ut := *(*time_t)(unsafe.Pointer(timep))
 	t := gotime.Unix(int64(ut), 0).In(loc)
 	(*time.Tm)(unsafe.Pointer(result)).Ftm_sec = int32(t.Second())
@@ -376,8 +381,6 @@ func Xsysconf(t *TLS, name int32) long {
 	switch name {
 	case unistd.X_SC_PAGESIZE:
 		return long(unix.Getpagesize())
-	case unistd.X_SC_NPROCESSORS_ONLN:
-		return long(runtime.NumCPU())
 	}
 
 	panic(todo(""))
@@ -1526,6 +1529,33 @@ func fcntlCmdStr(cmd int32) string {
 // 	panic(todo(""))
 // }
 
+// ssize_t pread(int fd, void *buf, size_t count, off_t offset);
+func Xpread(t *TLS, fd int32, buf uintptr, count types.Size_t, offset types.Off_t) types.Ssize_t {
+	var n int
+	var err error
+	switch {
+	case count == 0:
+		n, err = unix.Pread(int(fd), nil, int64(offset))
+	default:
+		n, err = unix.Pread(int(fd), (*RawMem)(unsafe.Pointer(buf))[:count:count], int64(offset))
+		if dmesgs && err == nil {
+			dmesg("%v: fd %v, off %#x, count %#x, n %#x\n%s", origin(1), fd, offset, count, n, hex.Dump((*RawMem)(unsafe.Pointer(buf))[:n:n]))
+		}
+	}
+	if err != nil {
+		if dmesgs {
+			dmesg("%v: %v FAIL", origin(1), err)
+		}
+		t.setErrno(err)
+		return -1
+	}
+
+	if dmesgs {
+		dmesg("%v: ok", origin(1))
+	}
+	return types.Ssize_t(n)
+}
+
 // ssize_t pwrite(int fd, const void *buf, size_t count, off_t offset);
 func Xpwrite(t *TLS, fd int32, buf uintptr, count types.Size_t, offset types.Off_t) types.Ssize_t {
 	var n int
@@ -1906,29 +1936,26 @@ func Xpause(t *TLS) int32 {
 // } fd_set;
 
 // __darwin_fd_set(int _fd, struct fd_set *const _p)
-//
-//	{
-//	        (_p->fds_bits[(unsigned long)_fd / __DARWIN_NFDBITS] |= ((__int32_t)(((unsigned long)1) << ((unsigned long)_fd % __DARWIN_NFDBITS))));
-//	}
+// {
+//         (_p->fds_bits[(unsigned long)_fd / __DARWIN_NFDBITS] |= ((__int32_t)(((unsigned long)1) << ((unsigned long)_fd % __DARWIN_NFDBITS))));
+// }
 func X__darwin_fd_set(tls *TLS, _fd int32, _p uintptr) int32 { /* main.c:12:1: */
 	*(*int32)(unsafe.Pointer(_p + uintptr(uint64(_fd)/(uint64(unsafe.Sizeof(int32(0)))*uint64(8)))*4)) |= int32(uint64(uint64(1)) << (uint64(_fd) % (uint64(unsafe.Sizeof(int32(0))) * uint64(8))))
 	return int32(0)
 }
 
 // __darwin_fd_isset(int _fd, const struct fd_set *_p)
-//
-//	{
-//	        return _p->fds_bits[(unsigned long)_fd / __DARWIN_NFDBITS] & ((__int32_t)(((unsigned long)1) << ((unsigned long)_fd % __DARWIN_NFDBITS)));
-//	}
+// {
+//         return _p->fds_bits[(unsigned long)_fd / __DARWIN_NFDBITS] & ((__int32_t)(((unsigned long)1) << ((unsigned long)_fd % __DARWIN_NFDBITS)));
+// }
 func X__darwin_fd_isset(tls *TLS, _fd int32, _p uintptr) int32 { /* main.c:17:1: */
 	return *(*int32)(unsafe.Pointer(_p + uintptr(uint64(_fd)/(uint64(unsafe.Sizeof(int32(0)))*uint64(8)))*4)) & int32(uint64(uint64(1))<<(uint64(_fd)%(uint64(unsafe.Sizeof(int32(0)))*uint64(8))))
 }
 
 // __darwin_fd_clr(int _fd, struct fd_set *const _p)
-//
-//	{
-//	        (_p->fds_bits[(unsigned long)_fd / __DARWIN_NFDBITS] &= ~((__int32_t)(((unsigned long)1) << ((unsigned long)_fd % __DARWIN_NFDBITS))));
-//	}
+// {
+//         (_p->fds_bits[(unsigned long)_fd / __DARWIN_NFDBITS] &= ~((__int32_t)(((unsigned long)1) << ((unsigned long)_fd % __DARWIN_NFDBITS))));
+// }
 func X__darwin_fd_clr(tls *TLS, _fd int32, _p uintptr) int32 { /* main.c:22:1: */
 	*(*int32)(unsafe.Pointer(_p + uintptr(uint64(_fd)/(uint64(unsafe.Sizeof(int32(0)))*uint64(8)))*4)) &= ^int32(uint64(uint64(1)) << (uint64(_fd) % (uint64(unsafe.Sizeof(int32(0))) * uint64(8))))
 	return int32(0)

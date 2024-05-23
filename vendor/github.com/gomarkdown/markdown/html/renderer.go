@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/gomarkdown/markdown/ast"
+	"github.com/gomarkdown/markdown/internal/valid"
 	"github.com/gomarkdown/markdown/parser"
 )
 
@@ -88,15 +89,13 @@ type RendererOptions struct {
 	// FootnoteReturnLinks flag is enabled. If blank, the string
 	// <sup>[return]</sup> is used.
 	FootnoteReturnLinkContents string
-	// CitationFormatString defines how a citation is rendered. If blank, the string
+	// CitationFormatString defines how a citation is rendered. If blnck, the string
 	// <sup>[%s]</sup> is used. Where %s will be substituted with the citation target.
 	CitationFormatString string
 	// If set, add this text to the front of each Heading ID, to ensure uniqueness.
 	HeadingIDPrefix string
 	// If set, add this text to the back of each Heading ID, to ensure uniqueness.
 	HeadingIDSuffix string
-	// can over-write <p> for paragraph tag
-	ParagraphTag string
 
 	Title string // Document title (used if CompletePage is set)
 	CSS   string // Optional CSS file URL (used if CompletePage is set)
@@ -122,7 +121,7 @@ type RendererOptions struct {
 //
 // Do not create this directly, instead use the NewRenderer function.
 type Renderer struct {
-	Opts RendererOptions
+	opts RendererOptions
 
 	closeTag string // how to end singleton tags: either " />" or ">"
 
@@ -133,11 +132,6 @@ type Renderer struct {
 
 	// if > 0, will strip html tags in Out and Outs
 	DisableTags int
-
-	// IsSafeURLOverride allows overriding the default URL matcher. URL is
-	// safe if the overriding function returns true. Can be used to extend
-	// the default list of safe URLs.
-	IsSafeURLOverride func(url []byte) bool
 
 	sr *SPRenderer
 
@@ -170,7 +164,7 @@ func EscapeHTML(w io.Writer, d []byte) {
 	}
 }
 
-func EscLink(w io.Writer, text []byte) {
+func escLink(w io.Writer, text []byte) {
 	unesc := html.UnescapeString(string(text))
 	EscapeHTML(w, []byte(unesc))
 }
@@ -209,7 +203,7 @@ func NewRenderer(opts RendererOptions) *Renderer {
 	}
 
 	return &Renderer{
-		Opts: opts,
+		opts: opts,
 
 		closeTag:   closeTag,
 		headingIDs: make(map[string]int),
@@ -219,11 +213,6 @@ func NewRenderer(opts RendererOptions) *Renderer {
 }
 
 func isRelativeLink(link []byte) (yes bool) {
-	// empty links considerd relative
-	if len(link) == 0 {
-		return true
-	}
-
 	// a tag begin with '#'
 	if link[0] == '#' {
 		return true
@@ -252,12 +241,9 @@ func isRelativeLink(link []byte) (yes bool) {
 	return false
 }
 
-func AddAbsPrefix(link []byte, prefix string) []byte {
-	if len(link) == 0 || len(prefix) == 0 {
-		return link
-	}
-	if isRelativeLink(link) && link[0] != '.' {
-		newDest := prefix
+func (r *Renderer) addAbsPrefix(link []byte) []byte {
+	if r.opts.AbsolutePrefix != "" && isRelativeLink(link) && link[0] != '.' {
+		newDest := r.opts.AbsolutePrefix
 		if link[0] != '/' {
 			newDest += "/"
 		}
@@ -295,16 +281,11 @@ func isMailto(link []byte) bool {
 	return bytes.HasPrefix(link, []byte("mailto:"))
 }
 
-func needSkipLink(r *Renderer, dest []byte) bool {
-	flags := r.Opts.Flags
+func needSkipLink(flags Flags, dest []byte) bool {
 	if flags&SkipLinks != 0 {
 		return true
 	}
-	isSafeURL := r.IsSafeURLOverride
-	if isSafeURL == nil {
-		isSafeURL = parser.IsSafeURL
-	}
-	return flags&Safelink != 0 && !isSafeURL(dest) && !isMailto(dest)
+	return flags&Safelink != 0 && !isSafeLink(dest) && !isMailto(dest)
 }
 
 func appendLanguageAttr(attrs []string, info []byte) []string {
@@ -319,7 +300,7 @@ func appendLanguageAttr(attrs []string, info []byte) []string {
 	return append(attrs, s)
 }
 
-func (r *Renderer) OutTag(w io.Writer, name string, attrs []string) {
+func (r *Renderer) outTag(w io.Writer, name string, attrs []string) {
 	s := name
 	if len(attrs) > 0 {
 		s += " " + strings.Join(attrs, " ")
@@ -328,22 +309,22 @@ func (r *Renderer) OutTag(w io.Writer, name string, attrs []string) {
 	r.lastOutputLen = 1
 }
 
-func FootnoteRef(prefix string, node *ast.Link) string {
-	urlFrag := prefix + string(Slugify(node.Destination))
+func footnoteRef(prefix string, node *ast.Link) string {
+	urlFrag := prefix + string(slugify(node.Destination))
 	nStr := strconv.Itoa(node.NoteID)
 	anchor := `<a href="#fn:` + urlFrag + `">` + nStr + `</a>`
 	return `<sup class="footnote-ref" id="fnref:` + urlFrag + `">` + anchor + `</sup>`
 }
 
-func FootnoteItem(prefix string, slug []byte) string {
+func footnoteItem(prefix string, slug []byte) string {
 	return `<li id="fn:` + prefix + string(slug) + `">`
 }
 
-func FootnoteReturnLink(prefix, returnLink string, slug []byte) string {
+func footnoteReturnLink(prefix, returnLink string, slug []byte) string {
 	return ` <a class="footnote-return" href="#fnref:` + prefix + string(slug) + `">` + returnLink + `</a>`
 }
 
-func ListItemOpenCR(listItem *ast.ListItem) bool {
+func listItemOpenCR(listItem *ast.ListItem) bool {
 	if ast.GetPrevNode(listItem) == nil {
 		return false
 	}
@@ -351,13 +332,13 @@ func ListItemOpenCR(listItem *ast.ListItem) bool {
 	return !ld.Tight && ld.ListFlags&ast.ListTypeDefinition == 0
 }
 
-func SkipParagraphTags(para *ast.Paragraph) bool {
+func skipParagraphTags(para *ast.Paragraph) bool {
 	parent := para.Parent
 	grandparent := parent.GetParent()
-	if grandparent == nil || !IsList(grandparent) {
+	if grandparent == nil || !isList(grandparent) {
 		return false
 	}
-	isParentTerm := IsListItemTerm(parent)
+	isParentTerm := isListItemTerm(parent)
 	grandparentListData := grandparent.(*ast.List)
 	tightOrTerm := grandparentListData.Tight || isParentTerm
 	return tightOrTerm
@@ -393,35 +374,35 @@ var (
 	closeHTags = []string{"</h1>", "</h2>", "</h3>", "</h4>", "</h5>"}
 )
 
-func HeadingOpenTagFromLevel(level int) string {
+func headingOpenTagFromLevel(level int) string {
 	if level < 1 || level > 5 {
 		return "<h6"
 	}
 	return openHTags[level-1]
 }
 
-func HeadingCloseTagFromLevel(level int) string {
+func headingCloseTagFromLevel(level int) string {
 	if level < 1 || level > 5 {
 		return "</h6>"
 	}
 	return closeHTags[level-1]
 }
 
-func (r *Renderer) OutHRTag(w io.Writer, attrs []string) {
+func (r *Renderer) outHRTag(w io.Writer, attrs []string) {
 	hr := TagWithAttributes("<hr", attrs)
-	r.OutOneOf(w, r.Opts.Flags&UseXHTML == 0, hr, "<hr />")
+	r.OutOneOf(w, r.opts.Flags&UseXHTML == 0, hr, "<hr />")
 }
 
 // Text writes ast.Text node
 func (r *Renderer) Text(w io.Writer, text *ast.Text) {
-	if r.Opts.Flags&Smartypants != 0 {
+	if r.opts.Flags&Smartypants != 0 {
 		var tmp bytes.Buffer
 		EscapeHTML(&tmp, text.Literal)
 		r.sr.Process(w, tmp.Bytes())
 	} else {
 		_, parentIsLink := text.Parent.(*ast.Link)
 		if parentIsLink {
-			EscLink(w, text.Literal)
+			escLink(w, text.Literal)
 		} else {
 			EscapeHTML(w, text.Literal)
 		}
@@ -430,7 +411,7 @@ func (r *Renderer) Text(w io.Writer, text *ast.Text) {
 
 // HardBreak writes ast.Hardbreak node
 func (r *Renderer) HardBreak(w io.Writer, node *ast.Hardbreak) {
-	r.OutOneOf(w, r.Opts.Flags&UseXHTML == 0, "<br>", "<br />")
+	r.OutOneOf(w, r.opts.Flags&UseXHTML == 0, "<br>", "<br />")
 	r.CR(w)
 }
 
@@ -461,7 +442,7 @@ func (r *Renderer) OutOneOfCr(w io.Writer, outFirst bool, first string, second s
 
 // HTMLSpan writes ast.HTMLSpan node
 func (r *Renderer) HTMLSpan(w io.Writer, span *ast.HTMLSpan) {
-	if r.Opts.Flags&SkipHTML == 0 {
+	if r.opts.Flags&SkipHTML == 0 {
 		r.Out(w, span.Literal)
 	}
 }
@@ -469,18 +450,18 @@ func (r *Renderer) HTMLSpan(w io.Writer, span *ast.HTMLSpan) {
 func (r *Renderer) linkEnter(w io.Writer, link *ast.Link) {
 	attrs := link.AdditionalAttributes
 	dest := link.Destination
-	dest = AddAbsPrefix(dest, r.Opts.AbsolutePrefix)
+	dest = r.addAbsPrefix(dest)
 	var hrefBuf bytes.Buffer
 	hrefBuf.WriteString("href=\"")
-	EscLink(&hrefBuf, dest)
+	escLink(&hrefBuf, dest)
 	hrefBuf.WriteByte('"')
 	attrs = append(attrs, hrefBuf.String())
 	if link.NoteID != 0 {
-		r.Outs(w, FootnoteRef(r.Opts.FootnoteAnchorPrefix, link))
+		r.Outs(w, footnoteRef(r.opts.FootnoteAnchorPrefix, link))
 		return
 	}
 
-	attrs = appendLinkAttrs(attrs, r.Opts.Flags, dest)
+	attrs = appendLinkAttrs(attrs, r.opts.Flags, dest)
 	if len(link.Title) > 0 {
 		var titleBuff bytes.Buffer
 		titleBuff.WriteString("title=\"")
@@ -488,7 +469,7 @@ func (r *Renderer) linkEnter(w io.Writer, link *ast.Link) {
 		titleBuff.WriteByte('"')
 		attrs = append(attrs, titleBuff.String())
 	}
-	r.OutTag(w, "<a", attrs)
+	r.outTag(w, "<a", attrs)
 }
 
 func (r *Renderer) linkExit(w io.Writer, link *ast.Link) {
@@ -500,7 +481,7 @@ func (r *Renderer) linkExit(w io.Writer, link *ast.Link) {
 // Link writes ast.Link node
 func (r *Renderer) Link(w io.Writer, link *ast.Link, entering bool) {
 	// mark it but don't link it if it is not a safe link: no smartypants
-	if needSkipLink(r, link.Destination) {
+	if needSkipLink(r.opts.Flags, link.Destination) {
 		r.OutOneOf(w, entering, "<tt>", "</tt>")
 		return
 	}
@@ -513,34 +494,33 @@ func (r *Renderer) Link(w io.Writer, link *ast.Link, entering bool) {
 }
 
 func (r *Renderer) imageEnter(w io.Writer, image *ast.Image) {
+	dest := image.Destination
+	dest = r.addAbsPrefix(dest)
+	if r.DisableTags == 0 {
+		//if options.safe && potentiallyUnsafe(dest) {
+		//out(w, `<img src="" alt="`)
+		//} else {
+		if r.opts.Flags&LazyLoadImages != 0 {
+			r.Outs(w, `<img loading="lazy" src="`)
+		} else {
+			r.Outs(w, `<img src="`)
+		}
+		escLink(w, dest)
+		r.Outs(w, `" alt="`)
+		//}
+	}
 	r.DisableTags++
-	if r.DisableTags > 1 {
-		return
-	}
-	src := image.Destination
-	src = AddAbsPrefix(src, r.Opts.AbsolutePrefix)
-	attrs := BlockAttrs(image)
-	if r.Opts.Flags&LazyLoadImages != 0 {
-		attrs = append(attrs, `loading="lazy"`)
-	}
-
-	s := TagWithAttributes("<img", attrs)
-	s = s[:len(s)-1] // hackish: strip off ">" from end
-	r.Outs(w, s+` src="`)
-	EscLink(w, src)
-	r.Outs(w, `" alt="`)
 }
 
 func (r *Renderer) imageExit(w io.Writer, image *ast.Image) {
 	r.DisableTags--
-	if r.DisableTags > 0 {
-		return
+	if r.DisableTags == 0 {
+		if image.Title != nil {
+			r.Outs(w, `" title="`)
+			EscapeHTML(w, image.Title)
+		}
+		r.Outs(w, `" />`)
 	}
-	if image.Title != nil {
-		r.Outs(w, `" title="`)
-		EscapeHTML(w, image.Title)
-	}
-	r.Outs(w, `" />`)
 }
 
 // Image writes ast.Image node
@@ -574,28 +554,20 @@ func (r *Renderer) paragraphEnter(w io.Writer, para *ast.Paragraph) {
 		}
 	}
 
-	ptag := "<p"
-	if r.Opts.ParagraphTag != "" {
-		ptag = "<" + r.Opts.ParagraphTag
-	}
-	tag := TagWithAttributes(ptag, BlockAttrs(para))
+	tag := TagWithAttributes("<p", BlockAttrs(para))
 	r.Outs(w, tag)
 }
 
 func (r *Renderer) paragraphExit(w io.Writer, para *ast.Paragraph) {
-	ptag := "</p>"
-	if r.Opts.ParagraphTag != "" {
-		ptag = "</" + r.Opts.ParagraphTag + ">"
-	}
-	r.Outs(w, ptag)
-	if !(IsListItem(para.Parent) && ast.GetNextNode(para) == nil) {
+	r.Outs(w, "</p>")
+	if !(isListItem(para.Parent) && ast.GetNextNode(para) == nil) {
 		r.CR(w)
 	}
 }
 
 // Paragraph writes ast.Paragraph node
 func (r *Renderer) Paragraph(w io.Writer, para *ast.Paragraph, entering bool) {
-	if SkipParagraphTags(para) {
+	if skipParagraphTags(para) {
 		return
 	}
 	if entering {
@@ -614,31 +586,12 @@ func (r *Renderer) Code(w io.Writer, node *ast.Code) {
 
 // HTMLBlock write ast.HTMLBlock node
 func (r *Renderer) HTMLBlock(w io.Writer, node *ast.HTMLBlock) {
-	if r.Opts.Flags&SkipHTML != 0 {
+	if r.opts.Flags&SkipHTML != 0 {
 		return
 	}
 	r.CR(w)
 	r.Out(w, node.Literal)
 	r.CR(w)
-}
-
-func (r *Renderer) EnsureUniqueHeadingID(id string) string {
-	for count, found := r.headingIDs[id]; found; count, found = r.headingIDs[id] {
-		tmp := fmt.Sprintf("%s-%d", id, count+1)
-
-		if _, tmpFound := r.headingIDs[tmp]; !tmpFound {
-			r.headingIDs[id] = count + 1
-			id = tmp
-		} else {
-			id = id + "-1"
-		}
-	}
-
-	if _, found := r.headingIDs[id]; !found {
-		r.headingIDs[id] = 0
-	}
-
-	return id
 }
 
 func (r *Renderer) headingEnter(w io.Writer, nodeData *ast.Heading) {
@@ -659,25 +612,44 @@ func (r *Renderer) headingEnter(w io.Writer, nodeData *ast.Heading) {
 		attrs = []string{`class="` + class + `"`}
 	}
 
-	if nodeData.HeadingID != "" {
-		id := r.EnsureUniqueHeadingID(nodeData.HeadingID)
-		if r.Opts.HeadingIDPrefix != "" {
-			id = r.Opts.HeadingIDPrefix + id
+	ensureUniqueHeadingID := func(id string) string {
+		for count, found := r.headingIDs[id]; found; count, found = r.headingIDs[id] {
+			tmp := fmt.Sprintf("%s-%d", id, count+1)
+
+			if _, tmpFound := r.headingIDs[tmp]; !tmpFound {
+				r.headingIDs[id] = count + 1
+				id = tmp
+			} else {
+				id = id + "-1"
+			}
 		}
-		if r.Opts.HeadingIDSuffix != "" {
-			id = id + r.Opts.HeadingIDSuffix
+
+		if _, found := r.headingIDs[id]; !found {
+			r.headingIDs[id] = 0
+		}
+
+		return id
+	}
+
+	if nodeData.HeadingID != "" {
+		id := ensureUniqueHeadingID(nodeData.HeadingID)
+		if r.opts.HeadingIDPrefix != "" {
+			id = r.opts.HeadingIDPrefix + id
+		}
+		if r.opts.HeadingIDSuffix != "" {
+			id = id + r.opts.HeadingIDSuffix
 		}
 		attrID := `id="` + id + `"`
 		attrs = append(attrs, attrID)
 	}
 	attrs = append(attrs, BlockAttrs(nodeData)...)
 	r.CR(w)
-	r.OutTag(w, HeadingOpenTagFromLevel(nodeData.Level), attrs)
+	r.outTag(w, headingOpenTagFromLevel(nodeData.Level), attrs)
 }
 
 func (r *Renderer) headingExit(w io.Writer, heading *ast.Heading) {
-	r.Outs(w, HeadingCloseTagFromLevel(heading.Level))
-	if !(IsListItem(heading.Parent) && ast.GetNextNode(heading) == nil) {
+	r.Outs(w, headingCloseTagFromLevel(heading.Level))
+	if !(isListItem(heading.Parent) && ast.GetNextNode(heading) == nil) {
 		r.CR(w)
 	}
 }
@@ -694,7 +666,7 @@ func (r *Renderer) Heading(w io.Writer, node *ast.Heading, entering bool) {
 // HorizontalRule writes ast.HorizontalRule node
 func (r *Renderer) HorizontalRule(w io.Writer, node *ast.HorizontalRule) {
 	r.CR(w)
-	r.OutHRTag(w, BlockAttrs(node))
+	r.outHRTag(w, BlockAttrs(node))
 	r.CR(w)
 }
 
@@ -704,15 +676,15 @@ func (r *Renderer) listEnter(w io.Writer, nodeData *ast.List) {
 
 	if nodeData.IsFootnotesList {
 		r.Outs(w, "\n<div class=\"footnotes\">\n\n")
-		if r.Opts.Flags&FootnoteNoHRTag == 0 {
-			r.OutHRTag(w, nil)
+		if r.opts.Flags&FootnoteNoHRTag == 0 {
+			r.outHRTag(w, nil)
 			r.CR(w)
 		}
 	}
 	r.CR(w)
-	if IsListItem(nodeData.Parent) {
+	if isListItem(nodeData.Parent) {
 		grand := nodeData.Parent.GetParent()
-		if IsListTight(grand) {
+		if isListTight(grand) {
 			r.CR(w)
 		}
 	}
@@ -728,7 +700,7 @@ func (r *Renderer) listEnter(w io.Writer, nodeData *ast.List) {
 		openTag = "<dl"
 	}
 	attrs = append(attrs, BlockAttrs(nodeData)...)
-	r.OutTag(w, openTag, attrs)
+	r.outTag(w, openTag, attrs)
 	r.CR(w)
 }
 
@@ -771,12 +743,12 @@ func (r *Renderer) List(w io.Writer, list *ast.List, entering bool) {
 }
 
 func (r *Renderer) listItemEnter(w io.Writer, listItem *ast.ListItem) {
-	if ListItemOpenCR(listItem) {
+	if listItemOpenCR(listItem) {
 		r.CR(w)
 	}
 	if listItem.RefLink != nil {
-		slug := Slugify(listItem.RefLink)
-		r.Outs(w, FootnoteItem(r.Opts.FootnoteAnchorPrefix, slug))
+		slug := slugify(listItem.RefLink)
+		r.Outs(w, footnoteItem(r.opts.FootnoteAnchorPrefix, slug))
 		return
 	}
 
@@ -791,11 +763,11 @@ func (r *Renderer) listItemEnter(w io.Writer, listItem *ast.ListItem) {
 }
 
 func (r *Renderer) listItemExit(w io.Writer, listItem *ast.ListItem) {
-	if listItem.RefLink != nil && r.Opts.Flags&FootnoteReturnLinks != 0 {
-		slug := Slugify(listItem.RefLink)
-		prefix := r.Opts.FootnoteAnchorPrefix
-		link := r.Opts.FootnoteReturnLinkContents
-		s := FootnoteReturnLink(prefix, link, slug)
+	if listItem.RefLink != nil && r.opts.Flags&FootnoteReturnLinks != 0 {
+		slug := slugify(listItem.RefLink)
+		prefix := r.opts.FootnoteAnchorPrefix
+		link := r.opts.FootnoteReturnLinkContents
+		s := footnoteReturnLink(prefix, link, slug)
 		r.Outs(w, s)
 	}
 
@@ -826,7 +798,7 @@ func (r *Renderer) EscapeHTMLCallouts(w io.Writer, d []byte) {
 	ld := len(d)
 Parse:
 	for i := 0; i < ld; i++ {
-		for _, comment := range r.Opts.Comments {
+		for _, comment := range r.opts.Comments {
 			if !bytes.HasPrefix(d[i:], comment) {
 				break
 			}
@@ -864,14 +836,14 @@ func (r *Renderer) CodeBlock(w io.Writer, codeBlock *ast.CodeBlock) {
 	r.Outs(w, "<pre>")
 	code := TagWithAttributes("<code", attrs)
 	r.Outs(w, code)
-	if r.Opts.Comments != nil {
+	if r.opts.Comments != nil {
 		r.EscapeHTMLCallouts(w, codeBlock.Literal)
 	} else {
 		EscapeHTML(w, codeBlock.Literal)
 	}
 	r.Outs(w, "</code>")
 	r.Outs(w, "</pre>")
-	if !IsListItem(codeBlock.Parent) {
+	if !isListItem(codeBlock.Parent) {
 		r.CR(w)
 	}
 }
@@ -921,7 +893,7 @@ func (r *Renderer) TableCell(w io.Writer, tableCell *ast.TableCell, entering boo
 	if ast.GetPrevNode(tableCell) == nil {
 		r.CR(w)
 	}
-	r.OutTag(w, openTag, attrs)
+	r.outTag(w, openTag, attrs)
 }
 
 // TableBody writes ast.TableBody node
@@ -970,8 +942,8 @@ func (r *Renderer) Citation(w io.Writer, node *ast.Citation) {
 		case ast.CitationTypeSuppressed:
 			attr[0] = `class="suppressed"`
 		}
-		r.OutTag(w, "<cite", attr)
-		r.Outs(w, fmt.Sprintf(`<a href="#%s">`+r.Opts.CitationFormatString+`</a>`, c, c))
+		r.outTag(w, "<cite", attr)
+		r.Outs(w, fmt.Sprintf(`<a href="#%s">`+r.opts.CitationFormatString+`</a>`, c, c))
 		r.Outs(w, "</cite>")
 	}
 }
@@ -979,7 +951,7 @@ func (r *Renderer) Citation(w io.Writer, node *ast.Citation) {
 // Callout writes ast.Callout node
 func (r *Renderer) Callout(w io.Writer, node *ast.Callout) {
 	attr := []string{`class="callout"`}
-	r.OutTag(w, "<span", attr)
+	r.outTag(w, "<span", attr)
 	r.Out(w, node.ID)
 	r.Outs(w, "</span>")
 }
@@ -988,14 +960,14 @@ func (r *Renderer) Callout(w io.Writer, node *ast.Callout) {
 func (r *Renderer) Index(w io.Writer, node *ast.Index) {
 	// there is no in-text representation.
 	attr := []string{`class="index"`, fmt.Sprintf(`id="%s"`, node.ID)}
-	r.OutTag(w, "<span", attr)
+	r.outTag(w, "<span", attr)
 	r.Outs(w, "</span>")
 }
 
 // RenderNode renders a markdown node to HTML
 func (r *Renderer) RenderNode(w io.Writer, node ast.Node, entering bool) ast.WalkStatus {
-	if r.Opts.RenderNodeHook != nil {
-		status, didHandle := r.Opts.RenderNodeHook(w, node, entering)
+	if r.opts.RenderNodeHook != nil {
+		status, didHandle := r.opts.RenderNodeHook(w, node, entering)
 		if didHandle {
 			return status
 		}
@@ -1030,7 +1002,7 @@ func (r *Renderer) RenderNode(w io.Writer, node ast.Node, entering bool) ast.Wal
 	case *ast.Citation:
 		r.Citation(w, node)
 	case *ast.Image:
-		if r.Opts.Flags&SkipImages != 0 {
+		if r.opts.Flags&SkipImages != 0 {
 			return ast.SkipChildren
 		}
 		r.Image(w, node, entering)
@@ -1109,7 +1081,7 @@ func (r *Renderer) RenderNode(w io.Writer, node ast.Node, entering bool) ast.Wal
 // RenderHeader writes HTML document preamble and TOC if requested.
 func (r *Renderer) RenderHeader(w io.Writer, ast ast.Node) {
 	r.writeDocumentHeader(w)
-	if r.Opts.Flags&TOC != 0 {
+	if r.opts.Flags&TOC != 0 {
 		r.writeTOC(w, ast)
 	}
 }
@@ -1120,18 +1092,18 @@ func (r *Renderer) RenderFooter(w io.Writer, _ ast.Node) {
 		r.Outs(w, "</section>\n")
 	}
 
-	if r.Opts.Flags&CompletePage == 0 {
+	if r.opts.Flags&CompletePage == 0 {
 		return
 	}
 	io.WriteString(w, "\n</body>\n</html>\n")
 }
 
 func (r *Renderer) writeDocumentHeader(w io.Writer) {
-	if r.Opts.Flags&CompletePage == 0 {
+	if r.opts.Flags&CompletePage == 0 {
 		return
 	}
 	ending := ""
-	if r.Opts.Flags&UseXHTML != 0 {
+	if r.opts.Flags&UseXHTML != 0 {
 		io.WriteString(w, "<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Transitional//EN\" ")
 		io.WriteString(w, "\"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd\">\n")
 		io.WriteString(w, "<html xmlns=\"http://www.w3.org/1999/xhtml\">\n")
@@ -1142,35 +1114,35 @@ func (r *Renderer) writeDocumentHeader(w io.Writer) {
 	}
 	io.WriteString(w, "<head>\n")
 	io.WriteString(w, "  <title>")
-	if r.Opts.Flags&Smartypants != 0 {
-		r.sr.Process(w, []byte(r.Opts.Title))
+	if r.opts.Flags&Smartypants != 0 {
+		r.sr.Process(w, []byte(r.opts.Title))
 	} else {
-		EscapeHTML(w, []byte(r.Opts.Title))
+		EscapeHTML(w, []byte(r.opts.Title))
 	}
 	io.WriteString(w, "</title>\n")
-	io.WriteString(w, r.Opts.Generator)
+	io.WriteString(w, r.opts.Generator)
 	io.WriteString(w, "\"")
 	io.WriteString(w, ending)
 	io.WriteString(w, ">\n")
 	io.WriteString(w, "  <meta charset=\"utf-8\"")
 	io.WriteString(w, ending)
 	io.WriteString(w, ">\n")
-	if r.Opts.CSS != "" {
+	if r.opts.CSS != "" {
 		io.WriteString(w, "  <link rel=\"stylesheet\" type=\"text/css\" href=\"")
-		EscapeHTML(w, []byte(r.Opts.CSS))
+		EscapeHTML(w, []byte(r.opts.CSS))
 		io.WriteString(w, "\"")
 		io.WriteString(w, ending)
 		io.WriteString(w, ">\n")
 	}
-	if r.Opts.Icon != "" {
+	if r.opts.Icon != "" {
 		io.WriteString(w, "  <link rel=\"icon\" type=\"image/x-icon\" href=\"")
-		EscapeHTML(w, []byte(r.Opts.Icon))
+		EscapeHTML(w, []byte(r.opts.Icon))
 		io.WriteString(w, "\"")
 		io.WriteString(w, ending)
 		io.WriteString(w, ">\n")
 	}
-	if r.Opts.Head != nil {
-		w.Write(r.Opts.Head)
+	if r.opts.Head != nil {
+		w.Write(r.opts.Head)
 	}
 	io.WriteString(w, "</head>\n")
 	io.WriteString(w, "<body>\n\n")
@@ -1232,31 +1204,53 @@ func (r *Renderer) writeTOC(w io.Writer, doc ast.Node) {
 	r.lastOutputLen = buf.Len()
 }
 
-func IsList(node ast.Node) bool {
+func isList(node ast.Node) bool {
 	_, ok := node.(*ast.List)
 	return ok
 }
 
-func IsListTight(node ast.Node) bool {
+func isListTight(node ast.Node) bool {
 	if list, ok := node.(*ast.List); ok {
 		return list.Tight
 	}
 	return false
 }
 
-func IsListItem(node ast.Node) bool {
+func isListItem(node ast.Node) bool {
 	_, ok := node.(*ast.ListItem)
 	return ok
 }
 
-func IsListItemTerm(node ast.Node) bool {
+func isListItemTerm(node ast.Node) bool {
 	data, ok := node.(*ast.ListItem)
 	return ok && data.ListFlags&ast.ListTypeTerm != 0
 }
 
+func isSafeLink(link []byte) bool {
+	for _, path := range valid.Paths {
+		if len(link) >= len(path) && bytes.Equal(link[:len(path)], path) {
+			if len(link) == len(path) {
+				return true
+			} else if isAlnum(link[len(path)]) {
+				return true
+			}
+		}
+	}
+
+	for _, prefix := range valid.URIs {
+		// TODO: handle unicode here
+		// case-insensitive prefix test
+		if len(link) > len(prefix) && bytes.Equal(bytes.ToLower(link[:len(prefix)]), prefix) && isAlnum(link[len(prefix)]) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // TODO: move to internal package
 // Create a url-safe slug for fragments
-func Slugify(in []byte) []byte {
+func slugify(in []byte) []byte {
 	if len(in) == 0 {
 		return in
 	}
@@ -1287,6 +1281,33 @@ func Slugify(in []byte) []byte {
 		}
 	}
 	return out[a : b+1]
+}
+
+// TODO: move to internal package
+// isAlnum returns true if c is a digit or letter
+// TODO: check when this is looking for ASCII alnum and when it should use unicode
+func isAlnum(c byte) bool {
+	return (c >= '0' && c <= '9') || isLetter(c)
+}
+
+// isSpace returns true if c is a white-space charactr
+func isSpace(c byte) bool {
+	return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v'
+}
+
+// isLetter returns true if c is ascii letter
+func isLetter(c byte) bool {
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+}
+
+// isPunctuation returns true if c is a punctuation symbol.
+func isPunctuation(c byte) bool {
+	for _, r := range []byte("!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~") {
+		if c == r {
+			return true
+		}
+	}
+	return false
 }
 
 // BlockAttrs takes a node and checks if it has block level attributes set. If so it

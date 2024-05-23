@@ -80,7 +80,7 @@ func (b *Bslack) handleSlackClient(messages chan *config.Message) {
 		case *slack.FileDeletedEvent:
 			rmsg, err := b.handleFileDeletedEvent(ev)
 			if err != nil {
-				b.Log.Printf("%#v", err)
+				b.Log.Errorf("%#v", err)
 				continue
 			}
 			messages <- rmsg

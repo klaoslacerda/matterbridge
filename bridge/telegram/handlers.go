@@ -11,7 +11,7 @@ import (
 	"github.com/klaoslacerda/matterbridge/bridge/config"
 	"github.com/klaoslacerda/matterbridge/bridge/helper"
 	"github.com/davecgh/go-spew/spew"
-	tgbotapi "github.com/matterbridge/telegram-bot-api/v6"
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
 func (b *Btelegram) handleUpdate(rmsg *config.Message, message, posted, edited *tgbotapi.Message) *tgbotapi.Message {
@@ -19,11 +19,6 @@ func (b *Btelegram) handleUpdate(rmsg *config.Message, message, posted, edited *
 	if posted != nil {
 		if posted.Text == "/chatId" {
 			chatID := strconv.FormatInt(posted.Chat.ID, 10)
-
-			// Handle chat topics
-			if posted.IsTopicMessage {
-				chatID = chatID + "/" + strconv.Itoa(posted.MessageThreadID)
-			}
 
 			_, err := b.Send(config.Message{
 				Channel: chatID,
@@ -96,8 +91,7 @@ func (b *Btelegram) handleForwarded(rmsg *config.Message, message *tgbotapi.Mess
 
 // handleQuoting handles quoting of previous messages
 func (b *Btelegram) handleQuoting(rmsg *config.Message, message *tgbotapi.Message) {
-	// Used to check if the message was a reply to the root topic
-	if message.ReplyToMessage != nil && (!message.IsTopicMessage || message.ReplyToMessage.MessageID != message.MessageThreadID) { //nolint:nestif
+	if message.ReplyToMessage != nil {
 		usernameReply := ""
 		if message.ReplyToMessage.From != nil {
 			if b.GetBool("UseFirstName") {
@@ -134,9 +128,7 @@ func (b *Btelegram) handleUsername(rmsg *config.Message, message *tgbotapi.Messa
 			rmsg.Username = message.From.FirstName
 		}
 		if b.GetBool("UseFullName") {
-			if message.From.FirstName != "" && message.From.LastName != "" {
-				rmsg.Username = message.From.FirstName + " " + message.From.LastName
-			}
+			rmsg.Username = message.From.FirstName + " " + message.From.LastName
 		}
 		if rmsg.Username == "" {
 			rmsg.Username = message.From.UserName
@@ -156,9 +148,7 @@ func (b *Btelegram) handleUsername(rmsg *config.Message, message *tgbotapi.Messa
 			rmsg.Username = message.SenderChat.FirstName
 		}
 		if b.GetBool("UseFullName") {
-			if message.SenderChat.FirstName != "" && message.SenderChat.LastName != "" {
-				rmsg.Username = message.SenderChat.FirstName + " " + message.SenderChat.LastName
-			}
+			rmsg.Username = message.SenderChat.FirstName + " " + message.SenderChat.LastName
 		}
 
 		if rmsg.Username == "" || rmsg.Username == "Channel_Bot" {
@@ -174,11 +164,6 @@ func (b *Btelegram) handleUsername(rmsg *config.Message, message *tgbotapi.Messa
 		}
 	}
 
-	// Fallback on author signature (used in "channel" type of chat)
-	if rmsg.Username == "" && message.AuthorSignature != "" {
-		rmsg.Username = message.AuthorSignature
-	}
-
 	// if we really didn't find a username, set it to unknown
 	if rmsg.Username == "" {
 		rmsg.Username = unknownUser
@@ -191,15 +176,13 @@ func (b *Btelegram) handleRecv(updates <-chan tgbotapi.Update) {
 
 		if update.Message == nil && update.ChannelPost == nil &&
 			update.EditedMessage == nil && update.EditedChannelPost == nil {
-			b.Log.Info("Received event without messages, skipping.")
+			b.Log.Error("Getting nil messages, this shouldn't happen.")
 			continue
 		}
 
 		if b.GetInt("debuglevel") == 1 {
 			spew.Dump(update.Message)
 		}
-
-		b.handleGroupUpdate(update)
 
 		var message *tgbotapi.Message
 
@@ -219,14 +202,9 @@ func (b *Btelegram) handleRecv(updates <-chan tgbotapi.Update) {
 		// set the ID's from the channel or group message
 		rmsg.ID = strconv.Itoa(message.MessageID)
 		rmsg.Channel = strconv.FormatInt(message.Chat.ID, 10)
-		if message.IsTopicMessage {
-			rmsg.Channel += "/" + strconv.Itoa(message.MessageThreadID)
-		}
 
 		// preserve threading from telegram reply
-		if message.ReplyToMessage != nil &&
-			// Used to check if the message was a reply to the root topic
-			(!message.IsTopicMessage || message.ReplyToMessage.MessageID != message.MessageThreadID) {
+		if message.ReplyToMessage != nil {
 			rmsg.ParentID = strconv.Itoa(message.ReplyToMessage.MessageID)
 		}
 
@@ -261,50 +239,6 @@ func (b *Btelegram) handleRecv(updates <-chan tgbotapi.Update) {
 			b.Remote <- rmsg
 		}
 	}
-}
-
-func (b *Btelegram) handleGroupUpdate(update tgbotapi.Update) {
-	if msg := update.Message; msg != nil {
-		switch {
-		case msg.NewChatMembers != nil:
-			b.handleUserJoin(update)
-		case msg.LeftChatMember != nil:
-			b.handleUserLeave(update)
-		}
-	}
-}
-
-func (b *Btelegram) handleUserJoin(update tgbotapi.Update) {
-	msg := update.Message
-	for _, user := range msg.NewChatMembers {
-		rmsg := config.Message{
-			UserID:   strconv.FormatInt(user.ID, 10),
-			Username: user.FirstName, // for some reason all the other name felids are empty on this event (at least for me)
-			Channel:  strconv.FormatInt(msg.Chat.ID, 10),
-			Account:  b.Account,
-			Protocol: b.Protocol,
-			Event:    config.EventJoinLeave,
-			Text:     "joined chat",
-		}
-		b.Remote <- rmsg
-	}
-}
-
-func (b *Btelegram) handleUserLeave(update tgbotapi.Update) {
-	msg := update.Message
-	user := msg.LeftChatMember
-
-	rmsg := config.Message{
-		UserID:   strconv.FormatInt(user.ID, 10),
-		Username: user.FirstName, // for some reason all the other name felids are empty on this event (at least for me)
-		Channel:  strconv.FormatInt(msg.Chat.ID, 10),
-		Account:  b.Account,
-		Protocol: b.Protocol,
-		Event:    config.EventJoinLeave,
-		Text:     "left chat",
-	}
-
-	b.Remote <- rmsg
 }
 
 // handleDownloadAvatar downloads the avatar of userid from channel
@@ -383,12 +317,12 @@ func (b *Btelegram) maybeConvertWebp(name *string, data *[]byte) {
 
 // handleDownloadFile handles file download
 func (b *Btelegram) handleDownload(rmsg *config.Message, message *tgbotapi.Message) error {
-	size := int64(0)
+	size := 0
 	var url, name, text string
 	switch {
 	case message.Sticker != nil:
 		text, name, url = b.getDownloadInfo(message.Sticker.FileID, ".webp", true)
-		size = int64(message.Sticker.FileSize)
+		size = message.Sticker.FileSize
 	case message.Voice != nil:
 		text, name, url = b.getDownloadInfo(message.Voice.FileID, ".ogg", true)
 		size = message.Voice.FileSize
@@ -405,7 +339,7 @@ func (b *Btelegram) handleDownload(rmsg *config.Message, message *tgbotapi.Messa
 		text = " " + message.Document.FileName + " : " + url
 	case message.Photo != nil:
 		photos := message.Photo
-		size = int64(photos[len(photos)-1].FileSize)
+		size = photos[len(photos)-1].FileSize
 		text, name, url = b.getDownloadInfo(photos[len(photos)-1].FileID, "", true)
 	}
 
@@ -509,7 +443,7 @@ func (b *Btelegram) handleEdit(msg *config.Message, chatid int64) (string, error
 }
 
 // handleUploadFile handles native upload of files
-func (b *Btelegram) handleUploadFile(msg *config.Message, chatid int64, threadid int, parentID int) (string, error) {
+func (b *Btelegram) handleUploadFile(msg *config.Message, chatid int64, parentID int) (string, error) {
 	var media []interface{}
 	for _, f := range msg.Extra["file"] {
 		fi := f.(config.FileInfo)
@@ -517,11 +451,6 @@ func (b *Btelegram) handleUploadFile(msg *config.Message, chatid int64, threadid
 			Name:  fi.Name,
 			Bytes: *fi.Data,
 		}
-
-		if b.GetString("MessageFormat") == HTMLFormat {
-			fi.Comment = makeHTML(html.EscapeString(fi.Comment))
-		}
-
 		switch filepath.Ext(fi.Name) {
 		case ".jpg", ".jpe", ".png":
 			pc := tgbotapi.NewInputMediaPhoto(file)
@@ -559,7 +488,7 @@ func (b *Btelegram) handleUploadFile(msg *config.Message, chatid int64, threadid
 		}
 	}
 
-	return b.sendMediaFiles(msg, chatid, threadid, parentID, media)
+	return b.sendMediaFiles(msg, chatid, parentID, media)
 }
 
 func (b *Btelegram) handleQuote(message, quoteNick, quoteMessage string) string {
