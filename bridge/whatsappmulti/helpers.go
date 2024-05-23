@@ -8,10 +8,10 @@ import (
 	"fmt"
 	"strings"
 
-	"google.golang.org/protobuf/proto" // Corrigido para importar o pacote proto
+	"google.golang.org/protobuf/proto" // Correto para usar o pacote proto para goproto
 
 	"go.mau.fi/whatsmeow"
-	"go.mau.fi/whatsmeow/binary/proto"
+	waproto "go.mau.fi/whatsmeow/binary/proto" // Renomear a importação para evitar conflitos
 	"go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/types"
 	"github.com/dgraph-io/badger/v3"
@@ -184,7 +184,7 @@ func (b *Bwhatsapp) saveDevice(device *store.Device) error {
 	return nil
 }
 
-func (b *Bwhatsapp) getNewReplyContext(parentID string) (*proto.ContextInfo, error) {
+func (b *Bwhatsapp) getNewReplyContext(parentID string) (*waproto.ContextInfo, error) {
 	replyInfo, err := b.parseMessageID(parentID)
 
 	if err != nil {
@@ -192,10 +192,10 @@ func (b *Bwhatsapp) getNewReplyContext(parentID string) (*proto.ContextInfo, err
 	}
 
 	sender := fmt.Sprintf("%s@%s", replyInfo.Sender.User, replyInfo.Sender.Server)
-	ctx := &proto.ContextInfo{
+	ctx := &waproto.ContextInfo{
 		StanzaId:      &replyInfo.MessageID,
 		Participant:   &sender,
-		QuotedMessage: &proto.Message{Conversation: proto.String("")},
+		QuotedMessage: &waproto.Message{Conversation: proto.String("")},
 	}
 
 	return ctx, nil
@@ -224,7 +224,7 @@ func (b *Bwhatsapp) parseMessageID(id string) (*Replyable, error) {
 	return &Replyable{MessageID: id}, err
 }
 
-func getParentIdFromCtx(ci *proto.ContextInfo) string {
+func getParentIdFromCtx(ci *waproto.ContextInfo) string {
 	if ci != nil && ci.StanzaId != nil {
 		senderJid, err := types.ParseJID(*ci.Participant)
 
