@@ -5,7 +5,6 @@ package bwhatsapp
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"mime"
@@ -21,10 +20,8 @@ import (
 
 	"go.mau.fi/whatsmeow"
 	waproto "go.mau.fi/whatsmeow/binary/proto"
-	"go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/types"
 	waLog "go.mau.fi/whatsmeow/util/log"
-	"github.com/dgraph-io/badger/v3"
 
 	goproto "google.golang.org/protobuf/proto"
 
@@ -459,127 +456,5 @@ func (b *Bwhatsapp) sendMessage(rmsg config.Message, message *waproto.Message) (
 	_, err := b.wc.SendMessage(context.Background(), groupJID, message, whatsmeow.SendRequestExtra{ID: ID})
 
 	return getMessageIdFormat(*b.wc.Store.ID, ID), err
-}
-
-// Funções auxiliares para lidar com BadgerDB
-
-func (b *Bwhatsapp) getDevice() (*store.Device, error) {
-	opts := badger.DefaultOptions(b.Config.GetString("sessionfile") + ".db")
-	opts.Logger = nil
-	db, err := badger.Open(opts)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open badger database: %v", err)
-	}
-	defer db.Close()
-
-	device := &store.Device{}
-	err = db.View(func(txn *badger.Txn) error {
-		_, err := txn.Get([]byte("device"))
-		if err == badger.ErrKeyNotFound {
-			// Key not found, initialize the device
-			device = &store.Device{}
-			return nil
-		} else if err != nil {
-			return err
-		}
-		item, err := txn.Get([]byte("device"))
-		if err != nil {
-			return err
-		}
-		return item.Value(func(val []byte) error {
-			return json.Unmarshal(val, device)
-		})
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to get device: %v", err)
-	}
-
-	return device, nil
-}
-
-func (b *Bwhatsapp) saveDevice(device *store.Device) error {
-	opts := badger.DefaultOptions(b.Config.GetString("sessionfile") + ".db")
-	opts.Logger = nil
-	db, err := badger.Open(opts)
-	if err != nil {
-		return fmt.Errorf("failed to open badger database: %v", err)
-	}
-	defer db.Close()
-
-	err = db.Update(func(txn *badger.Txn) error {
-		data, err := json.Marshal(device)
-		if err != nil {
-			return err
-		}
-		return txn.Set([]byte("device"), data)
-	})
-	if err != nil {
-		return fmt.Errorf("failed to save device: %v", err)
-	}
-
-	return nil
-}
-
-func (b *Bwhatsapp) getNewReplyContext(parentID string) (*waproto.ContextInfo, error) {
-	replyInfo, err := b.parseMessageID(parentID)
-
-	if err != nil {
-		return nil, err
-	}
-
-	sender := fmt.Sprintf("%s@%s", replyInfo.Sender.User, replyInfo.Sender.Server)
-	ctx := &waproto.ContextInfo{
-		StanzaId:      &replyInfo.MessageID,
-		Participant:   &sender,
-		QuotedMessage: &waproto.Message{Conversation: proto.String("")},
-	}
-
-	return ctx, nil
-}
-
-func (b *Bwhatsapp) parseMessageID(id string) (*Replyable, error) {
-	if id == "" {
-		return &Replyable{MessageID: id}, nil
-	}
-
-	replyInfo := strings.Split(id, "/")
-
-	if len(replyInfo) == 2 {
-		sender, err := types.ParseJID(replyInfo[0])
-
-		if err == nil {
-			return &Replyable{
-				MessageID: types.MessageID(replyInfo[1]),
-				Sender:    sender,
-			}, nil
-		}
-	}
-
-	err := fmt.Errorf("MessageID does not match format of {senderJID}:{messageID} : \"%s\"", id)
-
-	return &Replyable{MessageID: id}, err
-}
-
-func getParentIdFromCtx(ci *waproto.ContextInfo) string {
-	if ci != nil && ci.StanzaId != nil {
-		senderJid, err := types.ParseJID(*ci.Participant)
-
-		if err == nil {
-			return getMessageIdFormat(senderJid, *ci.StanzaId)
-		}
-	}
-
-	return ""
-}
-
-func getMessageIdFormat(jid types.JID, messageID string) string {
-	jidStr := fmt.Sprintf("%s@%s", jid.User, jid.Server)
-	return fmt.Sprintf("%s/%s", jidStr, messageID)
-}
-
-func isGroupJid(identifier string) bool {
-	return strings.HasSuffix(identifier, "@g.us") ||
-		strings.HasSuffix(identifier, "@temp") ||
-		strings.HasSuffix(identifier, "@broadcast")
 }
 

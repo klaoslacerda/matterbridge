@@ -8,10 +8,10 @@ import (
 	"fmt"
 	"strings"
 
-	"google.golang.org/protobuf/proto" // Correto para usar o pacote proto para goproto
+	"google.golang.org/protobuf/proto"
 
 	"go.mau.fi/whatsmeow"
-	waproto "go.mau.fi/whatsmeow/binary/proto" // Renomear a importação para evitar conflitos
+	waproto "go.mau.fi/whatsmeow/binary/proto"
 	"go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/types"
 	"github.com/dgraph-io/badger/v3"
@@ -140,7 +140,6 @@ func (b *Bwhatsapp) getDevice() (*store.Device, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open badger database: %v", err)
 	}
-
 	defer db.Close()
 
 	device := &store.Device{}
@@ -167,7 +166,6 @@ func (b *Bwhatsapp) saveDevice(device *store.Device) error {
 	if err != nil {
 		return fmt.Errorf("failed to open badger database: %v", err)
 	}
-
 	defer db.Close()
 
 	err = db.Update(func(txn *badger.Txn) error {
